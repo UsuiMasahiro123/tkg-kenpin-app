@@ -1,0 +1,118 @@
+@page
+@{
+    ViewData["Title"] = "ログイン";
+    Layout = "_Layout";
+}
+
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="login-logo">
+            <span class="material-icons-round login-logo-icon">inventory_2</span>
+            <div class="login-logo-title">TKG出荷管理検品</div>
+            <div class="login-logo-subtitle">出荷検品システム</div>
+        </div>
+
+        <form id="login-form" onsubmit="return false;">
+            <div class="input-group">
+                <label class="input-label" for="emp-no">社員番号</label>
+                <input type="text" id="emp-no" class="input-outlined scan-ready"
+                       placeholder="社員番号を入力またはスキャン"
+                       maxlength="10" inputmode="numeric" autocomplete="off" autofocus>
+                <div class="input-error" id="emp-no-error"></div>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label" for="site-code">拠点</label>
+                <select id="site-code" class="select-outlined">
+                    <option value="TOA-K">東亜（川崎）</option>
+                    <option value="TSUKUBA">つくば</option>
+                    <option value="HORIKOSHI">堀越</option>
+                </select>
+            </div>
+
+            <button type="submit" id="login-btn" class="btn btn-filled btn-lg" style="width:100%; margin-top:8px;" disabled>
+                <span class="material-icons-round">login</span>
+                ログイン
+            </button>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const empNoInput = document.getElementById('emp-no');
+    const siteCodeSelect = document.getElementById('site-code');
+    const loginBtn = document.getElementById('login-btn');
+    const empNoError = document.getElementById('emp-no-error');
+
+    // 前回の拠点をlocalStorageから復元
+    const savedSite = localStorage.getItem('lastSiteCode');
+    if (savedSite) {
+        siteCodeSelect.value = savedSite;
+    }
+
+    // 社員番号入力時のバリデーション
+    empNoInput.addEventListener('input', () => {
+        // 数字のみ許可
+        empNoInput.value = empNoInput.value.replace(/[^0-9]/g, '');
+        loginBtn.disabled = empNoInput.value.trim() === '';
+        empNoError.textContent = '';
+    });
+
+    // Enterキーでログイン発火（バーコードスキャン対応）
+    empNoInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (empNoInput.value.trim()) {
+                doLogin();
+            }
+        }
+    });
+
+    // ログインフォーム送信
+    document.getElementById('login-form').addEventListener('submit', doLogin);
+    loginBtn.addEventListener('click', doLogin);
+
+    async function doLogin() {
+        const empNo = empNoInput.value.trim();
+        const siteCode = siteCodeSelect.value;
+
+        if (!empNo) {
+            empNoError.textContent = '社員番号を入力してください';
+            empNoInput.classList.add('error');
+            return;
+        }
+
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<span class="material-icons-round">hourglass_empty</span> ログイン中...';
+
+        try {
+            const data = await apiCall('POST', '/api/auth/login', { empNo, siteCode });
+            if (!data) return;
+
+            // セッショントークン保存
+            setSessionToken(data.sessionToken);
+
+            // ユーザー情報保存
+            setUserInfo({
+                userName: data.userName,
+                siteCode: data.siteCode,
+                siteName: data.siteName,
+                empNo: empNo
+            });
+
+            // 拠点をlocalStorageに保存
+            localStorage.setItem('lastSiteCode', siteCode);
+
+            // メニュー画面へ遷移
+            location.href = '/Menu';
+        } catch (err) {
+            showSnackbar(err.message || '社員番号が見つかりません', 'error');
+            empNoInput.value = '';
+            empNoInput.focus();
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = '<span class="material-icons-round">login</span> ログイン';
+        }
+    }
+</script>
+}

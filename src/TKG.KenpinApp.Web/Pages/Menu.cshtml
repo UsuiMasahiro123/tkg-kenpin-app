@@ -1,0 +1,71 @@
+@page
+@{
+    ViewData["Title"] = "メニュー";
+    Layout = "_Layout";
+}
+
+<!-- トップバー -->
+<div class="top-bar">
+    <span class="material-icons-round">inventory_2</span>
+    <span class="top-bar-title">TKG出荷管理検品</span>
+    <div class="top-bar-actions">
+        <span id="user-site" style="font-size:13px; opacity:0.9;"></span>
+        <span style="opacity:0.5;">|</span>
+        <span id="user-name" style="font-size:13px;"></span>
+        <button class="btn btn-text" style="color:var(--md-on-primary);" onclick="doLogout()">
+            <span class="material-icons-round" style="font-size:20px;">logout</span>
+            ログアウト
+        </button>
+    </div>
+</div>
+
+<!-- メニュータイル -->
+<div class="tile-grid" style="margin-top:40px;">
+    <div class="tile" onclick="location.href='/Shipping/OrderList'">
+        <span class="material-icons-round tile-icon">local_shipping</span>
+        <span class="tile-label">出荷対象一覧</span>
+        <span class="tile-desc">検品対象の出荷指示を確認</span>
+    </div>
+    <div class="tile disabled">
+        <span class="material-icons-round tile-icon">fact_check</span>
+        <span class="tile-label">出荷実績確認</span>
+        <span class="tile-desc">検品済み出荷の実績参照</span>
+    </div>
+    <div class="tile disabled">
+        <span class="material-icons-round tile-icon">info</span>
+        <span class="tile-label">出荷情報確認</span>
+        <span class="tile-desc">出荷指示の詳細情報</span>
+    </div>
+    <div class="tile disabled">
+        <span class="material-icons-round tile-icon">track_changes</span>
+        <span class="tile-label">出荷情報追跡</span>
+        <span class="tile-desc">出荷状況のトラッキング</span>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // ログインチェック
+    const userInfo = getUserInfo();
+    if (!userInfo || !getSessionToken()) {
+        location.href = '/Login';
+    } else {
+        document.getElementById('user-name').textContent = userInfo.userName;
+        document.getElementById('user-site').textContent = userInfo.siteName;
+    }
+
+    async function doLogout() {
+        const token = getSessionToken();
+        if (token) {
+            try {
+                await apiCall('POST', '/api/auth/logout', { sessionToken: token });
+            } catch (e) {
+                // ログアウトAPIエラーは無視
+            }
+        }
+        clearSessionToken();
+        clearUserInfo();
+        location.href = '/Login';
+    }
+</script>
+}
