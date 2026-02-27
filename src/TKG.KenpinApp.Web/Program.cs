@@ -69,3 +69,6 @@ app.MapControllers();
 app.MapRazorPages();
 
 app.Run();
+
+// WebApplicationFactory<Program>用のアクセスポイント
+public partial class Program { }

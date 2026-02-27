@@ -231,7 +231,7 @@ public class InspectionService : IInspectionService
         {
             "SINGLE" => 1,
             "TOTAL_BARA" => 1,
-            "TOTAL_CASE" => itemInfo.UchibakoIrisu,
+            "TOTAL_CASE" => targetItem.UchibakoIrisu,
             _ => throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS, "不正な検品タイプです")
         };
 

@@ -19,4 +19,8 @@
     <Content Update="MockData\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TKG.KenpinApp.Tests" />
+  </ItemGroup>
+
 </Project>
