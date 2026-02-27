@@ -38,5 +38,9 @@ bld/
 **/[Pp]ackages/*
 !**/[Pp]ackages/build/
 
+## Deploy
+publish/
+deploy.zip
+
 ## Secrets
 appsettings.*.local.json

@@ -34,13 +34,19 @@ az group create --name rg-tkg-kenpin-sim --location japaneast
 ### 2-3. App Service Plan 作成
 
 ```bash
+# japaneastでF1を試行
 az appservice plan create \
   --name plan-tkg-kenpin-sim \
   --resource-group rg-tkg-kenpin-sim \
-  --sku F1
+  --sku F1 \
+  --location japaneast
 ```
 
-> **注意:** F1（無料）プランが使えない場合はクォータ増加をリクエストするか、B1（Basic）に変更してください。
+> **注意:** F1（無料）プランのクォータが不足している場合は以下を試してください:
+> 1. リージョンを変更して再試行（例: `--location eastasia`、`--location westus2`、`--location northeurope`）
+> 2. Azure ポータルからクォータ増加をリクエスト（トラブルシューティング参照）
+>
+> **検証時の実績:** japaneast ではF1クォータが0で作成不可、**eastasia（香港）で作成成功**
 
 ### 2-4. App Service 作成
 
