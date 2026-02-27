@@ -1,0 +1,450 @@
+/* ========================================
+   TKG検品アプリ — モバイル専用スタイル
+   375px幅ベース / タッチ操作最適化
+   ======================================== */
+
+/* --- レスポンシブ: ログイン画面 --- */
+@media (max-width: 600px) {
+  .login-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 24px 20px;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .login-wrapper {
+    padding: 0;
+  }
+  .login-logo-icon {
+    font-size: 56px;
+  }
+  .login-logo-title {
+    font-size: 22px;
+  }
+
+  /* タイルメニュー */
+  .tile-grid {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 12px;
+    margin-top: 16px !important;
+  }
+  .tile {
+    min-height: 80px;
+    flex-direction: row;
+    padding: 16px 20px;
+    gap: 16px;
+    text-align: left;
+    justify-content: flex-start;
+  }
+  .tile-icon {
+    font-size: 32px;
+  }
+  .tile-label {
+    font-size: 15px;
+  }
+
+  /* トップバー */
+  .top-bar {
+    min-height: 48px;
+    padding: 0 8px;
+  }
+  .top-bar-title {
+    font-size: 16px;
+  }
+  .top-bar-actions {
+    gap: 4px;
+    font-size: 12px;
+  }
+  .top-bar-actions .btn {
+    padding: 0 8px;
+    font-size: 12px;
+    height: 36px;
+  }
+
+  /* ボタン: タッチターゲット最低48px */
+  .btn {
+    min-height: 48px;
+    font-size: 15px;
+  }
+  .btn-lg {
+    min-height: 52px;
+    font-size: 16px;
+  }
+
+  /* 入力欄 */
+  .input-outlined {
+    font-size: 16px;
+    padding: 14px 16px;
+  }
+  .input-outlined:focus {
+    padding: 13px 15px;
+  }
+  .select-outlined {
+    font-size: 16px;
+    padding: 14px 16px;
+    min-height: 48px;
+  }
+  .select-outlined:focus {
+    padding: 13px 15px;
+  }
+
+  /* ページコンテナ */
+  .page-container {
+    padding: 16px;
+  }
+
+  /* ダイアログ */
+  .dialog {
+    min-width: auto;
+    max-width: calc(100vw - 32px);
+    margin: 16px;
+  }
+
+  /* Snackbar */
+  .snackbar {
+    left: 16px;
+    right: 16px;
+    transform: translateX(0) translateY(100px);
+    max-width: none;
+  }
+  .snackbar.show {
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* --- モバイル専用コンポーネント --- */
+
+/* モバイルトップバー（コンパクト版） */
+.m-top-bar {
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 48px;
+  box-shadow: var(--md-elevation-2);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.m-top-bar-back {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--md-on-primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.m-top-bar-back:active {
+  background: rgba(255,255,255,0.15);
+}
+.m-top-bar-title {
+  font-size: 16px;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-top-bar .badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255,255,255,0.2);
+  color: var(--md-on-primary);
+}
+
+/* モバイルページコンテナ */
+.m-page {
+  padding: 16px;
+  padding-bottom: 100px; /* 固定バーコード入力欄の高さ分 */
+}
+
+/* 固定フッターバーコード入力 */
+.m-scan-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--md-surface);
+  padding: 12px 16px;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.12);
+  z-index: 90;
+}
+.m-scan-footer input {
+  width: 100%;
+  font-size: 18px;
+  padding: 14px 16px;
+  font-family: var(--md-mono);
+  letter-spacing: 1px;
+  border: 2px solid var(--md-outline);
+  border-radius: var(--md-radius-sm);
+  background: #FFFDE7;
+  outline: none;
+}
+.m-scan-footer input:focus {
+  border-color: var(--md-primary);
+}
+.m-scan-footer input.scan-processing {
+  background: #E3F2FD;
+}
+.m-scan-footer input.scan-error {
+  background: #FFEBEE;
+  border-color: var(--md-error);
+}
+.m-scan-footer-label {
+  font-size: 11px;
+  color: var(--md-on-surface-variant);
+  margin-bottom: 4px;
+}
+
+/* 品目カード（テーブルの代わり） */
+.m-item-card {
+  background: var(--md-surface);
+  border-radius: var(--md-radius-md);
+  box-shadow: var(--md-elevation-1);
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: background 0.15s;
+}
+.m-item-card.completed {
+  background: #E8F5E9;
+}
+.m-item-card.highlight {
+  background: #E3F2FD;
+  box-shadow: var(--md-elevation-2);
+}
+.m-item-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.m-item-card-name {
+  font-size: 15px;
+  font-weight: 500;
+  flex: 1;
+  margin-right: 8px;
+}
+.m-item-card-check {
+  font-size: 24px;
+}
+.m-item-card-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+  margin-bottom: 8px;
+}
+.m-item-card-meta span {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.m-item-card-qty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.m-item-card-qty-numbers {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--md-mono);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.m-item-card-qty-numbers .scanned {
+  color: var(--md-primary);
+}
+.m-item-card-qty-numbers.completed .scanned {
+  color: var(--md-success);
+}
+.m-item-card-qty-numbers .divider {
+  font-size: 14px;
+  color: var(--md-outline);
+  font-weight: 400;
+}
+.m-item-card-qty-numbers .total {
+  font-size: 16px;
+  color: var(--md-on-surface-variant);
+  font-weight: 500;
+}
+.m-item-card-remain {
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+  text-align: right;
+}
+.m-item-card-remain .count {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--md-mono);
+  color: var(--md-warning);
+}
+.m-item-card-remain.done .count {
+  color: var(--md-success);
+}
+
+/* 品目カード内プログレスバー */
+.m-item-progress {
+  height: 6px;
+  background: var(--md-surface-container);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.m-item-progress-fill {
+  height: 100%;
+  background: var(--md-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.m-item-card.completed .m-item-progress-fill {
+  background: var(--md-success);
+}
+
+/* モバイル全体プログレス */
+.m-progress {
+  padding: 8px 16px;
+  background: var(--md-surface-container-low);
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+.m-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+/* 直前読取結果（モバイル） */
+.m-last-scan {
+  background: var(--md-surface);
+  border-radius: var(--md-radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--md-outline-variant);
+}
+.m-last-scan.success {
+  border-color: var(--md-success);
+  background: #E8F5E9;
+}
+.m-last-scan.error {
+  border-color: var(--md-error);
+  background: #FFEBEE;
+}
+.m-last-scan-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.m-last-scan-detail {
+  font-size: 13px;
+  color: var(--md-on-surface-variant);
+  margin-top: 2px;
+}
+
+/* アクションバー（中断・取消） */
+.m-action-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.m-action-row .btn {
+  flex: 1;
+}
+
+/* モバイル完了画面 */
+.m-complete-icon {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--md-success-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+.m-complete-icon .material-icons-round {
+  font-size: 56px;
+  color: var(--md-success);
+}
+
+/* モバイル伝票照合 */
+.m-slip-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--md-surface);
+  border-radius: var(--md-radius-md);
+  box-shadow: var(--md-elevation-1);
+  margin-bottom: 12px;
+}
+.m-slip-item.verified {
+  background: #E8F5E9;
+}
+.m-slip-item-icon {
+  font-size: 28px;
+  color: var(--md-outline);
+}
+.m-slip-item.verified .m-slip-item-icon {
+  color: var(--md-success);
+}
+.m-slip-item-info {
+  flex: 1;
+}
+.m-slip-item-label {
+  font-size: 15px;
+  font-weight: 500;
+}
+.m-slip-item-status {
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+}
+
+/* モバイル荷札読込 */
+.m-tag-result {
+  background: var(--md-surface);
+  border-radius: var(--md-radius-md);
+  box-shadow: var(--md-elevation-1);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.m-tag-result table {
+  width: 100%;
+  font-size: 14px;
+}
+.m-tag-result td {
+  padding: 6px 0;
+}
+.m-tag-result .label-col {
+  width: 100px;
+  color: var(--md-on-surface-variant);
+}
+
+/* 検品種別ボタン（モバイル用・縦並び） */
+.m-kenpin-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-kenpin-type-list .btn {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 52px;
+  padding: 0 20px;
+}
