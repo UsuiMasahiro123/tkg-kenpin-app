@@ -1,0 +1,453 @@
+@page
+@{
+    ViewData["Title"] = "出荷検品";
+    Layout = "_Layout";
+}
+
+<!-- トップバー -->
+<div class="top-bar">
+    <button class="top-bar-back" onclick="confirmBack()" title="一覧へ戻る">
+        <span class="material-icons-round">arrow_back</span>
+    </button>
+    <span class="top-bar-title">
+        <span id="header-seiri-no" class="text-mono"></span>
+        <span style="opacity:0.7; margin:0 8px;">/</span>
+        <span id="header-customer"></span>
+    </span>
+    <span class="badge" id="header-kenpin-type"></span>
+</div>
+
+<!-- プログレスバー -->
+<div style="padding:8px 24px; background:var(--md-surface-container-low); border-bottom:1px solid var(--md-outline-variant);">
+    <div class="progress-label">
+        <span>検品進捗</span>
+        <span id="progress-text">0 / 0 (0%)</span>
+    </div>
+    <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progress-bar" style="width:0%"></div>
+    </div>
+</div>
+
+<!-- メインコンテンツ -->
+<div class="inspect-layout">
+    <!-- 左: 商品明細テーブル -->
+    <div class="inspect-main">
+        <table class="data-grid" id="item-grid">
+            <thead id="item-grid-head">
+            </thead>
+            <tbody id="item-grid-body">
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 右: サイドパネル -->
+    <div class="inspect-side">
+        <!-- バーコード入力 -->
+        <div>
+            <label class="input-label">バーコード入力</label>
+            <input type="text" id="scan-input" class="input-outlined scan-input-lg scan-ready"
+                   placeholder="スキャン待機中..." autocomplete="off" autofocus>
+        </div>
+
+        <!-- 直前読取結果 -->
+        <div id="last-scan-area" style="display:none;">
+            <label class="input-label">直前読取結果</label>
+            <div class="last-scan-result" id="last-scan-result">
+                <div id="last-scan-item" style="font-weight:500;"></div>
+                <div id="last-scan-detail" class="text-sm text-muted mt-8"></div>
+            </div>
+        </div>
+
+        <!-- スキャン履歴 -->
+        <div>
+            <label class="input-label">スキャン履歴（直近5件）</label>
+            <div class="scan-history" id="scan-history">
+                <div class="text-sm text-muted">スキャン履歴なし</div>
+            </div>
+        </div>
+
+        <!-- 操作ボタン -->
+        <div style="margin-top:auto; display:flex; flex-direction:column; gap:8px;">
+            <button class="btn btn-outlined" id="btn-undo" disabled onclick="undoLastScan()">
+                <span class="material-icons-round">undo</span>直前取消
+            </button>
+            <button class="btn btn-outlined" style="color:var(--md-warning); border-color:var(--md-warning);" onclick="pauseInspection()">
+                <span class="material-icons-round">pause</span>中断
+            </button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // ログインチェック
+    const userInfo = getUserInfo();
+    if (!userInfo || !getSessionToken()) {
+        location.href = '/Login';
+    }
+
+    // 検品パラメータ取得
+    const inspParams = JSON.parse(sessionStorage.getItem('inspectionParams') || 'null');
+    if (!inspParams) {
+        location.href = '/Shipping/OrderList';
+    }
+
+    // 状態管理
+    let sessionId = null;
+    let items = [];        // 検品対象品目
+    let itemScanned = {};  // 品目別スキャン数量 { itemCode: scannedQty }
+    let scanHistory = [];  // スキャン履歴 [{ detailId, itemCode, itemName, qty, time }]
+    let lastDetailId = null;
+    let isProcessing = false;
+    const kenpinType = inspParams.kenpinType;
+
+    // ヘッダー設定
+    document.getElementById('header-seiri-no').textContent = inspParams.seiriNo;
+    document.getElementById('header-customer').textContent = inspParams.customerName;
+    document.getElementById('header-kenpin-type').textContent = getKenpinTypeLabel(kenpinType);
+
+    // 検品セッション開始
+    initSession();
+
+    // バーコード入力
+    const scanInput = document.getElementById('scan-input');
+    let scanDebounceTimer = null;
+
+    scanInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const barcode = scanInput.value.trim();
+            if (barcode && !isProcessing) {
+                clearTimeout(scanDebounceTimer);
+                scanDebounceTimer = setTimeout(() => doScan(barcode), 200);
+            }
+        }
+    });
+
+    // 画面クリックでスキャン入力にフォーカスを戻す
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('button') && !e.target.closest('input')) {
+            scanInput.focus();
+        }
+    });
+
+    /** 検品セッション初期化 */
+    async function initSession() {
+        try {
+            const data = await apiCall('POST', '/api/inspection/start', {
+                seiriNo: inspParams.seiriNo,
+                shukkaDate: inspParams.shukkaDate,
+                kenpinType: kenpinType
+            });
+            if (!data) return;
+
+            sessionId = data.sessionId;
+            items = data.items;
+
+            // 品目別スキャン数量を初期化
+            items.forEach(item => {
+                itemScanned[item.itemCode] = 0;
+            });
+
+            renderItemGrid();
+            updateProgress();
+            scanInput.focus();
+        } catch (err) {
+            showDialog(err.message || '検品セッションの開始に失敗しました', () => {
+                location.href = '/Shipping/OrderList';
+            });
+        }
+    }
+
+    /** テーブルヘッダー生成 */
+    function renderItemGrid() {
+        const thead = document.getElementById('item-grid-head');
+        const tbody = document.getElementById('item-grid-body');
+
+        if (kenpinType === 'TOTAL_CASE') {
+            thead.innerHTML = `<tr>
+                <th style="width:40px;"></th>
+                <th>ロケーション</th>
+                <th>品目コード</th>
+                <th>商品名</th>
+                <th class="text-right">外箱数</th>
+                <th class="text-right">内箱入数</th>
+                <th class="text-right">出荷数</th>
+                <th class="text-right">検品数</th>
+                <th class="text-right">残外箱</th>
+            </tr>`;
+        } else {
+            thead.innerHTML = `<tr>
+                <th style="width:40px;"></th>
+                <th>ロケーション</th>
+                <th>品目コード</th>
+                <th>商品名</th>
+                <th class="text-right">バラ出荷数</th>
+                <th class="text-right">検品数</th>
+                <th class="text-right">残数</th>
+            </tr>`;
+        }
+
+        renderItemRows();
+    }
+
+    /** テーブル行描画 */
+    function renderItemRows() {
+        const tbody = document.getElementById('item-grid-body');
+
+        tbody.innerHTML = items.map(item => {
+            const scanned = itemScanned[item.itemCode] || 0;
+            const remain = item.shipQty - scanned;
+            const isComplete = remain <= 0;
+            const rowClass = isComplete ? 'row-completed' : '';
+
+            const checkIcon = isComplete
+                ? '<span class="item-complete-check material-icons-round">check_circle</span>'
+                : '<span class="text-muted material-icons-round" style="font-size:20px;opacity:0.3;">radio_button_unchecked</span>';
+
+            if (kenpinType === 'TOTAL_CASE') {
+                const remainCase = isComplete ? 0 : Math.ceil(remain / item.uchibakoIrisu);
+                return `<tr class="${rowClass}" data-item="${item.itemCode}">
+                    <td>${checkIcon}</td>
+                    <td class="text-mono">${escapeHtml(item.locationNo)}</td>
+                    <td class="text-mono">${escapeHtml(item.itemCode)}</td>
+                    <td>${escapeHtml(item.itemName)}</td>
+                    <td class="text-right">${item.unitShukkaSu}</td>
+                    <td class="text-right">${item.uchibakoIrisu}</td>
+                    <td class="text-right font-bold">${item.shipQty}</td>
+                    <td class="text-right font-bold" style="color:${isComplete ? 'var(--md-success)' : 'var(--md-primary)'}">${scanned}</td>
+                    <td class="text-right">${remainCase}</td>
+                </tr>`;
+            } else {
+                return `<tr class="${rowClass}" data-item="${item.itemCode}">
+                    <td>${checkIcon}</td>
+                    <td class="text-mono">${escapeHtml(item.locationNo)}</td>
+                    <td class="text-mono">${escapeHtml(item.itemCode)}</td>
+                    <td>${escapeHtml(item.itemName)}</td>
+                    <td class="text-right font-bold">${item.baraShukkaSu}</td>
+                    <td class="text-right font-bold" style="color:${isComplete ? 'var(--md-success)' : 'var(--md-primary)'}">${scanned}</td>
+                    <td class="text-right">${remain}</td>
+                </tr>`;
+            }
+        }).join('');
+    }
+
+    /** プログレス更新 */
+    function updateProgress() {
+        const totalQty = items.reduce((sum, i) => sum + i.shipQty, 0);
+        const scannedTotal = Object.values(itemScanned).reduce((sum, q) => sum + q, 0);
+        const pct = totalQty > 0 ? Math.round(scannedTotal / totalQty * 100) : 0;
+
+        document.getElementById('progress-text').textContent = `${scannedTotal} / ${totalQty} (${pct}%)`;
+        document.getElementById('progress-bar').style.width = `${pct}%`;
+    }
+
+    /** スキャン実行 */
+    async function doScan(barcode) {
+        if (isProcessing) return;
+        isProcessing = true;
+
+        scanInput.value = '';
+        scanInput.classList.remove('scan-ready');
+        scanInput.classList.add('scan-processing');
+
+        try {
+            const data = await apiCall('POST', '/api/inspection/scan', {
+                sessionId,
+                barcode,
+                scanDatetime: new Date().toISOString(),
+                scanMethod: 'PC'
+            });
+
+            if (!data) {
+                isProcessing = false;
+                return;
+            }
+
+            // スキャン数量を更新
+            itemScanned[data.itemCode] = data.newScannedQty;
+            lastDetailId = data.detailId;
+
+            // 対象品目情報を取得
+            const targetItem = items.find(i => i.itemCode === data.itemCode);
+
+            // 直前読取結果を更新
+            updateLastScanResult(targetItem, data);
+
+            // スキャン履歴に追加
+            scanHistory.unshift({
+                detailId: data.detailId,
+                itemCode: data.itemCode,
+                itemName: targetItem?.itemName || data.itemCode,
+                qty: data.addedQty,
+                time: new Date().toLocaleTimeString()
+            });
+            if (scanHistory.length > 5) scanHistory.pop();
+            renderScanHistory();
+
+            // テーブル更新
+            renderItemRows();
+            highlightRow(data.itemCode);
+            updateProgress();
+
+            // 取消ボタン有効化
+            document.getElementById('btn-undo').disabled = false;
+
+            // 成功音
+            playSuccessBeep();
+
+            scanInput.classList.remove('scan-processing');
+            scanInput.classList.add('scan-ready');
+
+            // 全品完了チェック
+            if (data.isAllComplete) {
+                playCompletionSound();
+                setTimeout(() => {
+                    // 完了画面へ遷移
+                    sessionStorage.setItem('completionData', JSON.stringify({
+                        sessionId,
+                        seiriNo: inspParams.seiriNo,
+                        customerName: inspParams.customerName,
+                        koguchiSu: inspParams.koguchiSu,
+                        totalItems: items.length,
+                        totalQty: items.reduce((s, i) => s + i.shipQty, 0),
+                        completedAt: new Date().toISOString()
+                    }));
+                    location.href = '/Inspection/Complete';
+                }, 500);
+            }
+        } catch (err) {
+            scanInput.classList.remove('scan-processing');
+            scanInput.classList.add('scan-error');
+            playErrorBuzz();
+
+            const msg = err.message || 'スキャンエラー';
+            if (msg.includes('E-KNP-003') || msg.includes('超過')) {
+                showDialog(msg, null, '警告');
+            } else {
+                showSnackbar(msg, 'error');
+            }
+
+            setTimeout(() => {
+                scanInput.classList.remove('scan-error');
+                scanInput.classList.add('scan-ready');
+            }, 1000);
+        } finally {
+            isProcessing = false;
+            scanInput.focus();
+        }
+    }
+
+    /** 直前読取結果更新 */
+    function updateLastScanResult(item, data) {
+        const area = document.getElementById('last-scan-area');
+        const resultDiv = document.getElementById('last-scan-result');
+        area.style.display = 'block';
+        resultDiv.className = 'last-scan-result success';
+        document.getElementById('last-scan-item').textContent = item?.itemName || data.itemCode;
+        document.getElementById('last-scan-detail').textContent =
+            `+${data.addedQty} → ${data.newScannedQty} / ${item?.shipQty || '?'} (残: ${data.remainQty})`;
+    }
+
+    /** スキャン履歴描画 */
+    function renderScanHistory() {
+        const el = document.getElementById('scan-history');
+        if (scanHistory.length === 0) {
+            el.innerHTML = '<div class="text-sm text-muted">スキャン履歴なし</div>';
+            return;
+        }
+        el.innerHTML = scanHistory.map(h => `
+            <div class="scan-history-item">
+                <span>${escapeHtml(h.itemName)} (+${h.qty})</span>
+                <span class="text-muted">${h.time}</span>
+            </div>
+        `).join('');
+    }
+
+    /** 行ハイライト */
+    function highlightRow(itemCode) {
+        document.querySelectorAll('#item-grid-body tr').forEach(tr => {
+            tr.classList.remove('row-highlight');
+        });
+        const row = document.querySelector(`tr[data-item="${itemCode}"]`);
+        if (row && !row.classList.contains('row-completed')) {
+            row.classList.add('row-highlight');
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    /** 直前取消 */
+    async function undoLastScan() {
+        if (!lastDetailId || scanHistory.length === 0) return;
+
+        const lastScan = scanHistory[0];
+
+        try {
+            const data = await apiCall('DELETE', '/api/inspection/scan', {
+                sessionId,
+                detailId: lastScan.detailId
+            });
+            if (!data) return;
+
+            // スキャン数量を更新
+            itemScanned[data.undoneItemCode] = data.newScannedQty;
+
+            // 履歴から除去
+            scanHistory.shift();
+            lastDetailId = scanHistory.length > 0 ? scanHistory[0].detailId : null;
+
+            renderItemRows();
+            renderScanHistory();
+            updateProgress();
+
+            // 取消ボタン状態更新
+            document.getElementById('btn-undo').disabled = scanHistory.length === 0;
+
+            // 直前読取結果をリセット
+            document.getElementById('last-scan-result').className = 'last-scan-result';
+            document.getElementById('last-scan-item').textContent = `${lastScan.itemName} を取消しました`;
+            document.getElementById('last-scan-detail').textContent = '';
+
+            showSnackbar('直前のスキャンを取消しました', 'info');
+        } catch (err) {
+            showSnackbar(err.message || '取消に失敗しました', 'error');
+        }
+        scanInput.focus();
+    }
+
+    /** 検品中断 */
+    function pauseInspection() {
+        showConfirm('検品を中断しますか？\n中断しても進捗は保存されます。', async () => {
+            try {
+                await apiCall('PUT', '/api/inspection/pause', { sessionId });
+                showSnackbar('検品を中断しました', 'info');
+                sessionStorage.removeItem('inspectionParams');
+                location.href = '/Shipping/OrderList';
+            } catch (err) {
+                showSnackbar(err.message || '中断に失敗しました', 'error');
+            }
+        });
+    }
+
+    /** 戻るボタン確認 */
+    function confirmBack() {
+        showConfirm('検品画面を離れますか？\n未保存の進捗は中断として保存されます。', async () => {
+            try {
+                await apiCall('PUT', '/api/inspection/pause', { sessionId });
+            } catch (e) { /* 無視 */ }
+            sessionStorage.removeItem('inspectionParams');
+            location.href = '/Shipping/OrderList';
+        });
+    }
+
+    /** 検品種別ラベル */
+    function getKenpinTypeLabel(type) {
+        switch (type) {
+            case 'SINGLE': return 'シングル';
+            case 'TOTAL_BARA': return 'トータルバラ';
+            case 'TOTAL_CASE': return 'トータルケース';
+            default: return type;
+        }
+    }
+</script>
+}

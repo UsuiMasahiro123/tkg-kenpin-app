@@ -1,0 +1,193 @@
+@page
+@{
+    ViewData["Title"] = "伝票検品";
+    Layout = "_Layout";
+}
+
+<!-- トップバー -->
+<div class="top-bar">
+    <button class="top-bar-back" onclick="location.href='/Shipping/OrderList'" title="一覧へ戻る">
+        <span class="material-icons-round">arrow_back</span>
+    </button>
+    <span class="top-bar-title">伝票検品</span>
+    <span id="header-seiri-no" class="badge text-mono"></span>
+</div>
+
+<div class="page-container" style="max-width:640px;">
+
+    <h3 style="font-size:16px; font-weight:500; margin-bottom:24px;">
+        <span class="material-icons-round" style="vertical-align:middle; margin-right:4px; color:var(--md-primary);">receipt_long</span>
+        伝票バーコードを順番にスキャンしてください
+    </h3>
+
+    <!-- 伝票照合リスト -->
+    <div class="slip-list" id="slip-list">
+        <!-- 納品書 -->
+        <div class="slip-item" id="slip-nouhinsho" data-type="NOUHINSHO">
+            <span class="material-icons-round slip-item-icon">description</span>
+            <div class="slip-item-info">
+                <div class="slip-item-label">納品書</div>
+                <div class="slip-item-status" id="slip-nouhinsho-status">未照合</div>
+            </div>
+            <span class="material-icons-round" id="slip-nouhinsho-check" style="color:var(--md-outline-variant); font-size:28px;">radio_button_unchecked</span>
+        </div>
+
+        <!-- 送り状 -->
+        <div class="slip-item" id="slip-okurijou" data-type="OKURIJOU">
+            <span class="material-icons-round slip-item-icon">local_shipping</span>
+            <div class="slip-item-info">
+                <div class="slip-item-label">送り状</div>
+                <div class="slip-item-status" id="slip-okurijou-status">未照合</div>
+            </div>
+            <span class="material-icons-round" id="slip-okurijou-check" style="color:var(--md-outline-variant); font-size:28px;">radio_button_unchecked</span>
+        </div>
+    </div>
+
+    <!-- バーコード入力欄 -->
+    <div class="card mt-24" style="padding:24px;">
+        <label class="input-label" for="slip-barcode">伝票バーコード</label>
+        <input type="text" id="slip-barcode" class="input-outlined scan-input-lg scan-ready"
+               placeholder="伝票バーコードをスキャン" autocomplete="off" autofocus>
+        <div class="input-error" id="slip-error"></div>
+    </div>
+
+    <!-- 操作ボタン -->
+    <div class="flex flex-end gap-8 mt-24">
+        <button class="btn btn-outlined" onclick="location.href='/Shipping/OrderList'">
+            <span class="material-icons-round">list</span>一覧へ戻る
+        </button>
+        <button class="btn btn-filled btn-lg" id="btn-complete" disabled onclick="finishSlipVerify()">
+            <span class="material-icons-round">done_all</span>完了
+        </button>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // ログインチェック
+    if (!getUserInfo() || !getSessionToken()) {
+        location.href = '/Login';
+    }
+
+    // 完了データから sessionId を取得
+    const completionData = JSON.parse(sessionStorage.getItem('completionData') || 'null');
+    const sessionId = completionData?.sessionId;
+    if (!sessionId) {
+        showSnackbar('検品セッション情報がありません', 'warning');
+    }
+
+    // ヘッダー表示
+    if (completionData) {
+        document.getElementById('header-seiri-no').textContent = completionData.seiriNo;
+    }
+
+    // 照合状態
+    let verified = { NOUHINSHO: false, OKURIJOU: false };
+
+    const barcodeInput = document.getElementById('slip-barcode');
+
+    // バーコード入力 (Enter発火)
+    barcodeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const barcode = barcodeInput.value.trim();
+            if (barcode) {
+                doSlipVerify(barcode);
+                barcodeInput.value = '';
+            }
+        }
+    });
+
+    /** 伝票照合実行 */
+    async function doSlipVerify(barcode) {
+        // 次に照合すべき伝票種別を自動判定
+        let denpyoType = '';
+        if (!verified.NOUHINSHO) {
+            denpyoType = 'NOUHINSHO';
+        } else if (!verified.OKURIJOU) {
+            denpyoType = 'OKURIJOU';
+        } else {
+            showSnackbar('全ての伝票は照合済みです', 'info');
+            return;
+        }
+
+        barcodeInput.classList.remove('scan-ready');
+        barcodeInput.classList.add('scan-processing');
+
+        try {
+            const data = await apiCall('POST', '/api/inspection/slip-verify', {
+                sessionId,
+                denpyoType,
+                barcode
+            });
+
+            if (!data) return;
+
+            if (data.result === 'OK') {
+                // 照合OK
+                verified[denpyoType] = true;
+                updateSlipItem(denpyoType, true);
+                playSuccessBeep();
+                showSnackbar(getSlipLabel(denpyoType) + ' の照合が完了しました', 'success');
+            } else {
+                // 照合NG
+                updateSlipItem(denpyoType, false);
+                playErrorBuzz();
+                showSnackbar(getSlipLabel(denpyoType) + ' の照合に失敗しました。正しいバーコードを読み取ってください', 'error', 5000);
+            }
+
+            barcodeInput.classList.remove('scan-processing');
+            barcodeInput.classList.add('scan-ready');
+
+            // 全伝票OKなら完了ボタン有効化
+            if (verified.NOUHINSHO && verified.OKURIJOU) {
+                document.getElementById('btn-complete').disabled = false;
+            }
+        } catch (err) {
+            barcodeInput.classList.remove('scan-processing');
+            barcodeInput.classList.add('scan-error');
+            playErrorBuzz();
+            showSnackbar(err.message || '照合エラー', 'error');
+            setTimeout(() => {
+                barcodeInput.classList.remove('scan-error');
+                barcodeInput.classList.add('scan-ready');
+            }, 1000);
+        }
+
+        barcodeInput.focus();
+    }
+
+    /** 伝票アイテム表示更新 */
+    function updateSlipItem(type, isOk) {
+        const typeKey = type === 'NOUHINSHO' ? 'nouhinsho' : 'okurijou';
+        const item = document.getElementById(`slip-${typeKey}`);
+        const status = document.getElementById(`slip-${typeKey}-status`);
+        const check = document.getElementById(`slip-${typeKey}-check`);
+
+        if (isOk) {
+            item.classList.add('verified');
+            status.textContent = '照合OK';
+            status.style.color = 'var(--md-success)';
+            check.textContent = 'check_circle';
+            check.style.color = 'var(--md-success)';
+        } else {
+            status.textContent = '照合NG — 再スキャンしてください';
+            status.style.color = 'var(--md-error)';
+        }
+    }
+
+    /** 伝票種別の表示名 */
+    function getSlipLabel(type) {
+        return type === 'NOUHINSHO' ? '納品書' : '送り状';
+    }
+
+    /** 伝票検品完了 */
+    function finishSlipVerify() {
+        sessionStorage.removeItem('completionData');
+        showSnackbar('伝票検品が完了しました', 'success');
+        setTimeout(() => {
+            location.href = '/Shipping/OrderList';
+        }, 1000);
+    }
+</script>
+}

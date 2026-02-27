@@ -1,0 +1,123 @@
+@page
+@{
+    ViewData["Title"] = "検品完了";
+    Layout = "_Layout";
+}
+
+<!-- トップバー -->
+<div class="top-bar" style="background:var(--md-success);">
+    <span class="material-icons-round">check_circle</span>
+    <span class="top-bar-title">検品完了</span>
+</div>
+
+<div class="page-container" style="max-width:600px; text-align:center; padding-top:40px;">
+
+    <!-- 完了アイコン -->
+    <div class="complete-icon" id="complete-icon">
+        <span class="material-icons-round">check</span>
+    </div>
+
+    <h2 style="font-size:24px; font-weight:700; color:var(--md-success); margin-bottom:8px;">
+        検品が完了しました
+    </h2>
+    <p class="text-muted mb-24">すべての商品の検品が正常に完了しました</p>
+
+    <!-- サマリーカード -->
+    <div class="card card-elevated" style="text-align:left;">
+        <h3 style="font-size:16px; font-weight:500; margin-bottom:16px;">
+            <span class="material-icons-round" style="vertical-align:middle; margin-right:4px; color:var(--md-primary);">summarize</span>
+            完了サマリー
+        </h3>
+        <table style="width:100%; font-size:14px;">
+            <tr><td class="text-muted" style="padding:8px 0; width:140px;">整理番号</td><td id="sum-seiri-no" class="text-mono font-bold"></td></tr>
+            <tr><td class="text-muted" style="padding:8px 0;">顧客名</td><td id="sum-customer"></td></tr>
+            <tr><td class="text-muted" style="padding:8px 0;">個口数</td><td id="sum-koguchi"></td></tr>
+            <tr><td class="text-muted" style="padding:8px 0;">検品品目数</td><td id="sum-items"></td></tr>
+            <tr><td class="text-muted" style="padding:8px 0;">検品数量合計</td><td id="sum-qty" class="font-bold"></td></tr>
+            <tr><td class="text-muted" style="padding:8px 0;">完了時刻</td><td id="sum-time"></td></tr>
+            <tr>
+                <td class="text-muted" style="padding:8px 0;">D365連携</td>
+                <td id="sum-sync">
+                    <span class="status-badge 検品完了">
+                        <span class="material-icons-round" style="font-size:14px;">sync</span>
+                        連携中...
+                    </span>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- 操作ボタン -->
+    <div class="flex flex-center gap-16 mt-24">
+        <button class="btn btn-outlined btn-lg" onclick="location.href='/Shipping/OrderList'">
+            <span class="material-icons-round">list</span>一覧へ戻る
+        </button>
+        <button class="btn btn-filled btn-lg" id="btn-slip" onclick="goSlipVerify()">
+            <span class="material-icons-round">receipt_long</span>伝票検品へ
+        </button>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // ログインチェック
+    if (!getUserInfo() || !getSessionToken()) {
+        location.href = '/Login';
+    }
+
+    // 完了データ取得
+    const completionData = JSON.parse(sessionStorage.getItem('completionData') || 'null');
+    if (!completionData) {
+        location.href = '/Shipping/OrderList';
+    }
+
+    // 完了音再生
+    playCompletionSound();
+
+    // サマリー表示
+    document.getElementById('sum-seiri-no').textContent = completionData.seiriNo;
+    document.getElementById('sum-customer').textContent = completionData.customerName;
+    document.getElementById('sum-koguchi').textContent = completionData.koguchiSu;
+    document.getElementById('sum-items').textContent = `${completionData.totalItems} 品目`;
+    document.getElementById('sum-qty').textContent = `${completionData.totalQty} 個`;
+    document.getElementById('sum-time').textContent = formatDateTime(completionData.completedAt);
+
+    // 検品完了API呼出
+    completeInspection();
+
+    async function completeInspection() {
+        try {
+            const data = await apiCall('PUT', '/api/inspection/complete', {
+                sessionId: completionData.sessionId
+            });
+
+            if (data && data.success) {
+                const syncStatus = data.d365SyncStatus === 'Synced' ? '連携済み' : '連携中...';
+                const syncClass = data.d365SyncStatus === 'Synced' ? '検品完了' : '検品中';
+                const syncIcon = data.d365SyncStatus === 'Synced' ? 'check_circle' : 'sync';
+                document.getElementById('sum-sync').innerHTML = `
+                    <span class="status-badge ${syncClass}">
+                        <span class="material-icons-round" style="font-size:14px;">${syncIcon}</span>
+                        ${syncStatus}
+                    </span>
+                `;
+            }
+        } catch (err) {
+            document.getElementById('sum-sync').innerHTML = `
+                <span class="status-badge" style="background:#FFEBEE;color:var(--md-error);">
+                    <span class="material-icons-round" style="font-size:14px;">error</span>
+                    連携エラー
+                </span>
+            `;
+        }
+
+        // 検品パラメータをクリア
+        sessionStorage.removeItem('inspectionParams');
+    }
+
+    /** 伝票検品画面へ遷移 */
+    function goSlipVerify() {
+        location.href = '/Inspection/SlipVerify';
+    }
+</script>
+}
