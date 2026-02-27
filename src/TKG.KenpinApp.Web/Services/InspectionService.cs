@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using TKG.KenpinApp.Web.Constants;
 using TKG.KenpinApp.Web.Data;
+using TKG.KenpinApp.Web.Exceptions;
 using TKG.KenpinApp.Web.Models;
 using TKG.KenpinApp.Web.Models.Dto;
 using TKG.KenpinApp.Web.MockD365;
@@ -20,6 +22,17 @@ public class InspectionService : IInspectionService
     /// </summary>
     private const int LockTimeoutMinutes = 30;
 
+    /// <summary>
+    /// 許可されるステータス遷移マップ
+    /// </summary>
+    private static readonly Dictionary<string, HashSet<string>> AllowedTransitions = new()
+    {
+        { "SCANNING", new HashSet<string> { "PAUSED", "COMPLETED", "CANCELLED" } },
+        { "PAUSED", new HashSet<string> { "SCANNING" } },
+        { "COMPLETED", new HashSet<string>() },   // 完了後は変更不可
+        { "CANCELLED", new HashSet<string>() },    // キャンセル後は変更不可
+    };
+
     public InspectionService(KenpinDbContext db, ID365Service d365, ILogger<InspectionService> logger)
     {
         _db = db;
@@ -37,16 +50,40 @@ public class InspectionService : IInspectionService
         var existingLock = await _db.KenpinLocks
             .Where(l => l.SeiriNo == request.SeiriNo
                         && l.ShukkaDate.Date == shukkaDate.Date
-                        && l.ReleasedAt == null
-                        && l.TimeoutAt > now)
+                        && l.ReleasedAt == null)
             .FirstOrDefaultAsync();
 
         if (existingLock != null)
         {
-            throw new InvalidOperationException($"他のユーザー({existingLock.LockedBy})が検品中です");
+            if (existingLock.TimeoutAt < now)
+            {
+                // タイムアウト済み → 自動解放
+                existingLock.ReleasedAt = now;
+
+                // SCANNINGセッションもPAUSEDに
+                var oldSession = await _db.KenpinSessions
+                    .Where(s => s.SeiriNo == request.SeiriNo
+                                && s.ShukkaDate.Date == shukkaDate.Date
+                                && s.Status == "SCANNING")
+                    .FirstOrDefaultAsync();
+                if (oldSession != null)
+                {
+                    oldSession.Status = "PAUSED";
+                    oldSession.UpdatedAt = now;
+                }
+
+                _logger.LogWarning("検品開始時にタイムアウトロックを自動解放: seiriNo={SeiriNo}, lockedBy={LockedBy}",
+                    request.SeiriNo, existingLock.LockedBy);
+            }
+            else
+            {
+                // 他ユーザーが検品中 → ロック競合エラー
+                throw new BusinessException(ErrorCodes.LOCK_CONFLICT,
+                    $"他のユーザー({existingLock.LockedBy})が検品中です");
+            }
         }
 
-        // T_KENPIN_LOCK INSERT
+        // 新規ロック取得
         var kenpinLock = new KenpinLock
         {
             SeiriNo = request.SeiriNo,
@@ -61,7 +98,51 @@ public class InspectionService : IInspectionService
         var items = await _d365.GetShippingOrderItemsAsync(request.SeiriNo);
         var order = await _d365.GetShippingOrderAsync(request.SeiriNo);
 
-        // T_KENPIN_SESSION INSERT
+        // PAUSEDセッションの再開チェック
+        var pausedSession = await _db.KenpinSessions
+            .Where(s => s.SeiriNo == request.SeiriNo
+                        && s.ShukkaDate.Date == shukkaDate.Date
+                        && s.Status == "PAUSED")
+            .OrderByDescending(s => s.UpdatedAt)
+            .FirstOrDefaultAsync();
+
+        if (pausedSession != null)
+        {
+            // 既存セッションを再開（ステータス遷移チェック: PAUSED → SCANNING）
+            ValidateTransition(pausedSession.Status, "SCANNING");
+            pausedSession.Status = "SCANNING";
+            pausedSession.UpdatedAt = now;
+
+            // ログ記録
+            _db.AppLogs.Add(new AppLog
+            {
+                LogDatetime = now,
+                UserCode = userCode,
+                ActionType = "INSPECTION_START",
+                ScreenId = "KENPIN",
+                Detail = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    action = "RESUME",
+                    sessionId = pausedSession.SessionId,
+                    seiriNo = request.SeiriNo,
+                    kenpinType = request.KenpinType
+                })
+            });
+
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "検品セッション再開: sessionId={SessionId}, seiriNo={SeiriNo}",
+                pausedSession.SessionId, request.SeiriNo);
+
+            return new InspectionStartResponse
+            {
+                SessionId = pausedSession.SessionId,
+                Items = items
+            };
+        }
+
+        // 新規セッション作成
         var session = new KenpinSession
         {
             SeiriNo = request.SeiriNo,
@@ -78,16 +159,16 @@ public class InspectionService : IInspectionService
         };
         _db.KenpinSessions.Add(session);
 
-        // T_APP_LOG INSERT
+        // ログ記録
         _db.AppLogs.Add(new AppLog
         {
             LogDatetime = now,
             UserCode = userCode,
-            ActionType = "SCAN",
+            ActionType = "INSPECTION_START",
             ScreenId = "KENPIN",
             Detail = System.Text.Json.JsonSerializer.Serialize(new
             {
-                action = "START",
+                action = "NEW",
                 seiriNo = request.SeiriNo,
                 kenpinType = request.KenpinType
             })
@@ -111,21 +192,25 @@ public class InspectionService : IInspectionService
     {
         // セッション取得
         var session = await _db.KenpinSessions.FindAsync(request.SessionId)
-            ?? throw new InvalidOperationException("セッションが見つかりません");
+            ?? throw new BusinessException(ErrorCodes.KNP_SESSION_NOT_FOUND, "セッションが見つかりません");
 
+        // ステータスチェック: SCANNINGのみスキャン可能
         if (session.Status != "SCANNING")
         {
-            throw new InvalidOperationException("検品中ではありません");
+            throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS,
+                $"検品中ではありません（現在のステータス: {session.Status}）");
         }
 
         // バーコードから品目情報を照合
         var itemInfo = await _d365.LookupBarcodeAsync(request.Barcode)
-            ?? throw new InvalidOperationException("バーコードに対応する商品が見つかりません");
+            ?? throw new BusinessException(ErrorCodes.KNP_INVALID_BARCODE,
+                "バーコードに対応する商品が見つかりません");
 
         // 出荷指示明細から対象品目の出荷数量を取得
         var orderItems = await _d365.GetShippingOrderItemsAsync(session.SeiriNo);
         var targetItem = orderItems.FirstOrDefault(i => i.ItemCode == itemInfo.ItemCode)
-            ?? throw new InvalidOperationException("この出荷指示に含まれない商品です");
+            ?? throw new BusinessException(ErrorCodes.KNP_ITEM_NOT_FOUND,
+                "この出荷指示に含まれない商品です");
 
         // 既存スキャン数量を集計
         var scannedQty = await _db.KenpinDetails
@@ -134,13 +219,20 @@ public class InspectionService : IInspectionService
                         && !d.CancelFlg)
             .SumAsync(d => d.ScanQty);
 
+        // 完了済み品目チェック
+        if (scannedQty >= targetItem.ShipQty)
+        {
+            throw new BusinessException(ErrorCodes.KNP_ALREADY_DONE,
+                $"この商品は検品完了済みです（{scannedQty}/{targetItem.ShipQty}）");
+        }
+
         // スキャン時の加算数量を計算
         int addQty = session.KenpinType switch
         {
             "SINGLE" => 1,
             "TOTAL_BARA" => 1,
             "TOTAL_CASE" => itemInfo.UchibakoIrisu,
-            _ => throw new InvalidOperationException("不正な検品タイプです")
+            _ => throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS, "不正な検品タイプです")
         };
 
         // 端数処理（トータルケースで残数 < 入数の場合）
@@ -152,7 +244,8 @@ public class InspectionService : IInspectionService
         // 超過チェック
         if (scannedQty + addQty > targetItem.ShipQty)
         {
-            throw new InvalidOperationException("出荷数量を超過しています（E-KNP-003）");
+            throw new BusinessException(ErrorCodes.KNP_OVER_QTY,
+                $"出荷数量を超過しています（スキャン: {scannedQty + addQty} > 出荷: {targetItem.ShipQty}）");
         }
 
         var scanDatetime = DateTime.TryParse(request.ScanDatetime, out var parsed) ? parsed : DateTime.Now;
@@ -173,6 +266,24 @@ public class InspectionService : IInspectionService
         // T_KENPIN_SESSION UPDATE（スキャン数量加算）
         session.ScannedQty += addQty;
         session.UpdatedAt = DateTime.Now;
+
+        // ログ記録
+        _db.AppLogs.Add(new AppLog
+        {
+            LogDatetime = DateTime.Now,
+            UserCode = session.UserCode,
+            ActionType = "SCAN",
+            ScreenId = "KENPIN",
+            Detail = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                sessionId = request.SessionId,
+                seiriNo = session.SeiriNo,
+                barcode = request.Barcode,
+                itemCode = itemInfo.ItemCode,
+                addQty,
+                method = request.ScanMethod
+            })
+        });
 
         await _db.SaveChangesAsync();
 
@@ -204,16 +315,26 @@ public class InspectionService : IInspectionService
     public async Task<ScanCancelResponse> CancelScanAsync(ScanCancelRequest request)
     {
         var detail = await _db.KenpinDetails.FindAsync(request.DetailId)
-            ?? throw new InvalidOperationException("スキャン明細が見つかりません");
+            ?? throw new BusinessException(ErrorCodes.KNP_SESSION_NOT_FOUND, "スキャン明細が見つかりません");
 
         if (detail.SessionId != request.SessionId)
         {
-            throw new InvalidOperationException("セッションIDが一致しません");
+            throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS, "セッションIDが一致しません");
+        }
+
+        // セッションのステータスチェック
+        var session = await _db.KenpinSessions.FindAsync(request.SessionId)
+            ?? throw new BusinessException(ErrorCodes.KNP_SESSION_NOT_FOUND, "セッションが見つかりません");
+
+        if (session.Status != "SCANNING")
+        {
+            throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS,
+                $"検品中ではないため取消できません（現在のステータス: {session.Status}）");
         }
 
         if (detail.CancelFlg)
         {
-            throw new InvalidOperationException("既に取消済みです");
+            throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS, "既に取消済みです");
         }
 
         // 取消フラグを立てる
@@ -221,21 +342,23 @@ public class InspectionService : IInspectionService
         detail.CancelDatetime = DateTime.Now;
 
         // セッションのスキャン数量を減算
-        var session = await _db.KenpinSessions.FindAsync(request.SessionId)!;
-        session!.ScannedQty -= detail.ScanQty;
+        session.ScannedQty -= detail.ScanQty;
         session.UpdatedAt = DateTime.Now;
 
-        // T_APP_LOG INSERT
+        // ログ記録
         _db.AppLogs.Add(new AppLog
         {
             LogDatetime = DateTime.Now,
             UserCode = session.UserCode,
-            ActionType = "CANCEL",
+            ActionType = "SCAN_CANCEL",
             ScreenId = "KENPIN",
             Detail = System.Text.Json.JsonSerializer.Serialize(new
             {
+                sessionId = request.SessionId,
+                seiriNo = session.SeiriNo,
                 detailId = request.DetailId,
-                itemCode = detail.ItemCode
+                itemCode = detail.ItemCode,
+                cancelQty = detail.ScanQty
             })
         });
 
@@ -249,8 +372,8 @@ public class InspectionService : IInspectionService
             .SumAsync(d => d.ScanQty);
 
         _logger.LogInformation(
-            "スキャン取消: detailId={DetailId}, itemCode={ItemCode}",
-            request.DetailId, detail.ItemCode);
+            "スキャン取消: detailId={DetailId}, itemCode={ItemCode}, cancelQty={CancelQty}",
+            request.DetailId, detail.ItemCode, detail.ScanQty);
 
         return new ScanCancelResponse
         {
@@ -264,30 +387,47 @@ public class InspectionService : IInspectionService
     public async Task<bool> PauseAsync(long sessionId)
     {
         var session = await _db.KenpinSessions.FindAsync(sessionId)
-            ?? throw new InvalidOperationException("セッションが見つかりません");
+            ?? throw new BusinessException(ErrorCodes.KNP_SESSION_NOT_FOUND, "セッションが見つかりません");
+
+        // ステータス遷移チェック: SCANNING → PAUSED のみ許可
+        ValidateTransition(session.Status, "PAUSED");
 
         session.Status = "PAUSED";
         session.UpdatedAt = DateTime.Now;
 
-        // ロック解放
-        await ReleaseLockAsync(session.SeiriNo, session.ShukkaDate);
+        // ロック解放せず保持（timeout_atをリセット）
+        var activeLock = await _db.KenpinLocks
+            .Where(l => l.SeiriNo == session.SeiriNo
+                        && l.ShukkaDate.Date == session.ShukkaDate.Date
+                        && l.ReleasedAt == null)
+            .FirstOrDefaultAsync();
 
+        if (activeLock != null)
+        {
+            // 中断時はロック解放
+            activeLock.ReleasedAt = DateTime.Now;
+        }
+
+        // ログ記録
         _db.AppLogs.Add(new AppLog
         {
             LogDatetime = DateTime.Now,
             UserCode = session.UserCode,
-            ActionType = "SCAN",
+            ActionType = "INSPECTION_PAUSE",
             ScreenId = "KENPIN",
             Detail = System.Text.Json.JsonSerializer.Serialize(new
             {
-                action = "PAUSE",
-                sessionId
+                sessionId,
+                seiriNo = session.SeiriNo,
+                scannedQty = session.ScannedQty,
+                totalQty = session.TotalQty
             })
         });
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("検品中断: sessionId={SessionId}", sessionId);
+        _logger.LogInformation("検品中断: sessionId={SessionId}, scanned={Scanned}/{Total}",
+            sessionId, session.ScannedQty, session.TotalQty);
 
         return true;
     }
@@ -296,32 +436,40 @@ public class InspectionService : IInspectionService
     public async Task<InspectionCompleteResponse> CompleteAsync(long sessionId)
     {
         var session = await _db.KenpinSessions.FindAsync(sessionId)
-            ?? throw new InvalidOperationException("セッションが見つかりません");
+            ?? throw new BusinessException(ErrorCodes.KNP_SESSION_NOT_FOUND, "セッションが見つかりません");
+
+        // ステータス遷移チェック: SCANNING → COMPLETED のみ許可
+        ValidateTransition(session.Status, "COMPLETED");
 
         session.Status = "COMPLETED";
         session.CompletedAt = DateTime.Now;
         session.UpdatedAt = DateTime.Now;
-        session.D365Synced = true; // モックでは即座に同期済みとする
+        session.D365Synced = true; // モックでは即座に同期済みとする（リトライキューはCommit 3で実装）
 
         // ロック解放
         await ReleaseLockAsync(session.SeiriNo, session.ShukkaDate);
 
+        // ログ記録
         _db.AppLogs.Add(new AppLog
         {
             LogDatetime = DateTime.Now,
             UserCode = session.UserCode,
-            ActionType = "COMPLETE",
+            ActionType = "INSPECTION_COMPLETE",
             ScreenId = "KENPIN",
             Detail = System.Text.Json.JsonSerializer.Serialize(new
             {
                 sessionId,
-                totalScanned = session.ScannedQty
+                seiriNo = session.SeiriNo,
+                totalScanned = session.ScannedQty,
+                totalQty = session.TotalQty,
+                d365Synced = true
             })
         });
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("検品完了: sessionId={SessionId}", sessionId);
+        _logger.LogInformation("検品完了: sessionId={SessionId}, scanned={Scanned}",
+            sessionId, session.ScannedQty);
 
         return new InspectionCompleteResponse
         {
@@ -334,7 +482,7 @@ public class InspectionService : IInspectionService
     public async Task<SlipVerifyResponse> VerifySlipAsync(SlipVerifyRequest request)
     {
         var session = await _db.KenpinSessions.FindAsync(request.SessionId)
-            ?? throw new InvalidOperationException("セッションが見つかりません");
+            ?? throw new BusinessException(ErrorCodes.KNP_SESSION_NOT_FOUND, "セッションが見つかりません");
 
         // モック: 整理番号がバーコードに含まれていればOK
         var result = request.Barcode.Contains(session.SeiriNo) ? "OK" : "NG";
@@ -350,6 +498,23 @@ public class InspectionService : IInspectionService
         };
         _db.DenpyoKenpins.Add(denpyo);
 
+        // ログ記録
+        _db.AppLogs.Add(new AppLog
+        {
+            LogDatetime = DateTime.Now,
+            UserCode = session.UserCode,
+            ActionType = "SLIP_VERIFY",
+            ScreenId = "KENPIN",
+            Detail = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                sessionId = request.SessionId,
+                seiriNo = session.SeiriNo,
+                denpyoType = request.DenpyoType,
+                barcode = request.Barcode,
+                result
+            })
+        });
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -361,6 +526,20 @@ public class InspectionService : IInspectionService
             Success = true,
             Result = result
         };
+    }
+
+    /// <summary>
+    /// ステータス遷移の検証
+    /// 不正な遷移の場合は BusinessException をスロー
+    /// </summary>
+    private void ValidateTransition(string currentStatus, string newStatus)
+    {
+        if (!AllowedTransitions.ContainsKey(currentStatus)
+            || !AllowedTransitions[currentStatus].Contains(newStatus))
+        {
+            throw new BusinessException(ErrorCodes.KNP_INVALID_STATUS,
+                $"ステータス遷移が不正です（{currentStatus} → {newStatus}）");
+        }
     }
 
     /// <summary>

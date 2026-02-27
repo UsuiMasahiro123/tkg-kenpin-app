@@ -15,6 +15,9 @@ builder.Services.AddSingleton<ID365Service, MockD365Service>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IInspectionService, InspectionService>();
 
+// バックグラウンドジョブ
+builder.Services.AddHostedService<LockTimeoutService>();
+
 // コントローラー登録
 builder.Services.AddControllers();
 
