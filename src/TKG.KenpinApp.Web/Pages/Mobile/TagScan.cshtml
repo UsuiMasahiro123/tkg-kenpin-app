@@ -1,0 +1,192 @@
+@page
+@{
+    ViewData["Title"] = "荷札読込";
+    Layout = "_Layout";
+}
+
+<!-- トップバー -->
+<div class="m-top-bar">
+    <button class="m-top-bar-back" onclick="location.href='/Shipping/OrderList'" title="一覧へ戻る">
+        <span class="material-icons-round">arrow_back</span>
+    </button>
+    <span class="m-top-bar-title">荷札読込</span>
+</div>
+
+<div class="m-page">
+
+    <!-- バーコード入力カード -->
+    <div class="card" style="padding:20px; margin-bottom:16px;">
+        <h3 style="font-size:15px; font-weight:500; margin-bottom:12px;">
+            <span class="material-icons-round" style="vertical-align:middle; margin-right:4px; color:var(--md-primary);">qr_code_scanner</span>
+            荷札バーコードを読み取ってください
+        </h3>
+        <input type="text" id="tag-barcode" class="input-outlined scan-input-lg scan-ready"
+               placeholder="バーコードをスキャン" autocomplete="off"
+               style="font-size:18px;" autofocus>
+    </div>
+
+    <!-- 読取結果 -->
+    <div class="m-tag-result" id="result-card" style="display:none;">
+        <h3 style="font-size:15px; font-weight:500; margin-bottom:8px;">
+            <span class="material-icons-round" style="vertical-align:middle; margin-right:4px; color:var(--md-success);">check_circle</span>
+            読取結果
+        </h3>
+        <table>
+            <tr><td class="label-col">整理番号</td><td id="res-seiri-no" class="text-mono font-bold"></td></tr>
+            <tr><td class="label-col">顧客名</td><td id="res-customer"></td></tr>
+            <tr><td class="label-col">個口数</td><td id="res-koguchi"></td></tr>
+            <tr><td class="label-col">検品種別</td><td id="res-pick-type"></td></tr>
+            <tr><td class="label-col">出荷倉庫</td><td id="res-warehouse"></td></tr>
+        </table>
+    </div>
+
+    <!-- ロック警告 -->
+    <div class="card" id="lock-warning" style="display:none; border-left:4px solid var(--md-warning); padding:16px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:8px; color:var(--md-warning);">
+            <span class="material-icons-round">warning</span>
+            <span id="lock-message" style="font-weight:500; font-size:14px;"></span>
+        </div>
+    </div>
+
+    <!-- 検品種別選択 -->
+    <div class="card" id="kenpin-type-card" style="display:none; padding:16px; margin-bottom:16px;">
+        <h3 style="font-size:15px; font-weight:500; margin-bottom:12px;">検品種別を選択</h3>
+        <div class="m-kenpin-type-list">
+            <button class="btn btn-tonal kenpin-type-btn" data-type="SINGLE" onclick="selectKenpinType('SINGLE')">
+                <span class="material-icons-round">looks_one</span>シングル
+            </button>
+            <button class="btn btn-tonal kenpin-type-btn" data-type="TOTAL_BARA" onclick="selectKenpinType('TOTAL_BARA')">
+                <span class="material-icons-round">inventory</span>トータルバラ
+            </button>
+            <button class="btn btn-tonal kenpin-type-btn" data-type="TOTAL_CASE" onclick="selectKenpinType('TOTAL_CASE')">
+                <span class="material-icons-round">cases</span>トータルケース
+            </button>
+        </div>
+    </div>
+
+    <!-- 操作ボタン -->
+    <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="btn btn-filled btn-lg" id="btn-start" disabled onclick="startInspection()" style="width:100%;">
+            <span class="material-icons-round">play_arrow</span>検品開始
+        </button>
+        <button class="btn btn-outlined" onclick="location.href='/Shipping/OrderList'" style="width:100%;">
+            <span class="material-icons-round">arrow_back</span>一覧に戻る
+        </button>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // ログインチェック
+    const userInfo = getUserInfo();
+    if (!userInfo || !getSessionToken()) {
+        location.href = '/Login';
+    }
+
+    let orderDetail = null;
+    let selectedKenpinType = '';
+
+    const barcodeInput = document.getElementById('tag-barcode');
+
+    // URLパラメータから整理番号があれば自動読込
+    const params = new URLSearchParams(location.search);
+    const preSeiriNo = params.get('seiriNo');
+    if (preSeiriNo) {
+        barcodeInput.value = preSeiriNo;
+        loadOrderDetail(preSeiriNo);
+    }
+
+    // バーコード入力（Enter発火）
+    barcodeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = barcodeInput.value.trim();
+            if (val) {
+                loadOrderDetail(val);
+                barcodeInput.value = '';
+            }
+        }
+    });
+
+    /** 出荷指示詳細を読込 */
+    async function loadOrderDetail(seiriNo) {
+        barcodeInput.classList.remove('scan-ready');
+        barcodeInput.classList.add('scan-processing');
+
+        try {
+            const data = await apiCall('GET', `/api/shipping/orders/${seiriNo}?shukkaDate=${getToday()}`);
+            if (!data) return;
+
+            orderDetail = data;
+
+            document.getElementById('res-seiri-no').textContent = data.seiriNo;
+            document.getElementById('res-customer').textContent = data.customerName;
+            document.getElementById('res-koguchi').textContent = data.koguchiSu;
+            document.getElementById('res-pick-type').textContent = getPickTypeLabel(data.pickType);
+            document.getElementById('res-warehouse').textContent = data.warehouseCode;
+            document.getElementById('result-card').style.display = 'block';
+
+            if (data.isLocked) {
+                document.getElementById('lock-message').textContent =
+                    `${data.lockedBy || '他のユーザー'} が検品中です`;
+                document.getElementById('lock-warning').style.display = 'block';
+                document.getElementById('kenpin-type-card').style.display = 'none';
+                document.getElementById('btn-start').disabled = true;
+            } else {
+                document.getElementById('lock-warning').style.display = 'none';
+                document.getElementById('kenpin-type-card').style.display = 'block';
+                selectKenpinType(data.pickType);
+            }
+
+            barcodeInput.classList.remove('scan-processing');
+            barcodeInput.classList.add('scan-ready');
+            playSuccessBeep();
+        } catch (err) {
+            barcodeInput.classList.remove('scan-processing');
+            barcodeInput.classList.add('scan-error');
+            showSnackbar(err.message || 'バーコードを正しく読み取ってください', 'error');
+            playErrorBuzz();
+            setTimeout(() => {
+                barcodeInput.classList.remove('scan-error');
+                barcodeInput.classList.add('scan-ready');
+            }, 1000);
+        }
+        barcodeInput.focus();
+    }
+
+    function selectKenpinType(type) {
+        selectedKenpinType = type;
+        document.querySelectorAll('.kenpin-type-btn').forEach(btn => {
+            btn.classList.remove('btn-filled');
+            btn.classList.add('btn-tonal');
+            if (btn.dataset.type === type) {
+                btn.classList.remove('btn-tonal');
+                btn.classList.add('btn-filled');
+            }
+        });
+        document.getElementById('btn-start').disabled = false;
+    }
+
+    function getPickTypeLabel(pickType) {
+        switch (pickType) {
+            case 'SINGLE': return 'シングル';
+            case 'TOTAL_BARA': return 'トータルバラ';
+            case 'TOTAL_CASE': return 'トータルケース';
+            default: return pickType;
+        }
+    }
+
+    function startInspection() {
+        if (!orderDetail || !selectedKenpinType) return;
+        sessionStorage.setItem('inspectionParams', JSON.stringify({
+            seiriNo: orderDetail.seiriNo,
+            shukkaDate: getToday(),
+            kenpinType: selectedKenpinType,
+            customerName: orderDetail.customerName,
+            koguchiSu: orderDetail.koguchiSu,
+            warehouseCode: orderDetail.warehouseCode
+        }));
+        location.href = '/Mobile/Inspect';
+    }
+</script>
+}
