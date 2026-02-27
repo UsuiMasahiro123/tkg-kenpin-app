@@ -1,0 +1,286 @@
+@page
+@{
+    ViewData["Title"] = "出荷対象一覧";
+    Layout = "_Layout";
+}
+
+<!-- トップバー -->
+<div class="top-bar">
+    <button class="top-bar-back" onclick="location.href='/Menu'" title="メニューへ戻る">
+        <span class="material-icons-round">arrow_back</span>
+    </button>
+    <span class="top-bar-title">出荷対象一覧</span>
+    <div class="top-bar-actions">
+        <span id="user-site" style="font-size:13px; opacity:0.9;"></span>
+        <span style="opacity:0.5;">|</span>
+        <span id="user-name" style="font-size:13px;"></span>
+    </div>
+</div>
+
+<!-- 検索条件エリア -->
+<div class="search-area">
+    <div class="input-group">
+        <label class="input-label">出荷指示日（FROM）</label>
+        <input type="date" id="date-from" class="input-outlined" style="width:160px;">
+    </div>
+    <div class="input-group">
+        <label class="input-label">出荷指示日（TO）</label>
+        <input type="date" id="date-to" class="input-outlined" style="width:160px;">
+    </div>
+    <div class="input-group">
+        <label class="input-label">ステータス</label>
+        <select id="filter-status" class="select-outlined" style="width:140px;">
+            <option value="">全て</option>
+            <option value="未検品">未検品</option>
+            <option value="検品中">検品中</option>
+            <option value="検品完了">検品完了</option>
+            <option value="出荷済">出荷済</option>
+        </select>
+    </div>
+    <button class="btn btn-filled" onclick="searchOrders()">
+        <span class="material-icons-round">search</span>検索
+    </button>
+    <button class="btn btn-outlined" onclick="clearSearch()">
+        <span class="material-icons-round">clear</span>クリア
+    </button>
+</div>
+
+<!-- 操作ボタンエリア -->
+<div class="action-bar">
+    <button class="btn btn-filled" id="btn-start-pc" disabled onclick="startInspectionPC()">
+        <span class="material-icons-round">computer</span>検品開始（PC）
+    </button>
+    <button class="btn btn-outlined" disabled>
+        <span class="material-icons-round">print</span>印刷
+    </button>
+    <div class="flex-1"></div>
+    <span class="paging-info" id="paging-info"></span>
+</div>
+
+<!-- データグリッド -->
+<div style="overflow-x:auto;">
+    <table class="data-grid" id="order-grid">
+        <thead>
+            <tr>
+                <th style="width:40px;"><input type="checkbox" class="checkbox" id="check-all" onchange="toggleAll(this)"></th>
+                <th onclick="sortBy('seiriNo')">整理番号 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('koguchiSu')">個口数 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('customerName')">顧客名 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('warehouseCode')">出荷倉庫 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('shipDate')">出荷予定日 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('carrierName')">運送会社 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('pickType')">検品種別 <span class="sort-icon material-icons-round">unfold_more</span></th>
+                <th onclick="sortBy('status')">ステータス <span class="sort-icon material-icons-round">unfold_more</span></th>
+            </tr>
+        </thead>
+        <tbody id="order-body">
+        </tbody>
+    </table>
+</div>
+
+<!-- ページング -->
+<div class="paging" id="paging-area" style="display:none;">
+    <button class="btn btn-text" id="btn-prev" onclick="changePage(-1)">
+        <span class="material-icons-round">chevron_left</span>前へ
+    </button>
+    <span id="page-display">1 / 1</span>
+    <button class="btn btn-text" id="btn-next" onclick="changePage(1)">
+        次へ<span class="material-icons-round">chevron_right</span>
+    </button>
+</div>
+
+@section Scripts {
+<script>
+    // ログインチェック
+    const userInfo = getUserInfo();
+    if (!userInfo || !getSessionToken()) {
+        location.href = '/Login';
+    } else {
+        document.getElementById('user-name').textContent = userInfo.userName;
+        document.getElementById('user-site').textContent = userInfo.siteName;
+    }
+
+    // 状態管理
+    let allOrders = [];
+    let currentPage = 1;
+    const pageSize = 50;
+    let sortField = 'seiriNo';
+    let sortAsc = true;
+    let selectedOrders = new Set();
+
+    // 初期化：デフォルト日付設定
+    document.getElementById('date-from').value = getToday();
+    document.getElementById('date-to').value = getDateOffset(7);
+
+    // 初期検索
+    searchOrders();
+
+    /** 出荷対象一覧を検索 */
+    async function searchOrders() {
+        const dateFrom = document.getElementById('date-from').value;
+        const dateTo = document.getElementById('date-to').value;
+        const status = document.getElementById('filter-status').value;
+        const siteCode = userInfo?.siteCode || '';
+
+        let url = `/api/shipping/orders?page=1&pageSize=200`;
+        if (dateFrom) url += `&dateFrom=${dateFrom}`;
+        if (dateTo) url += `&dateTo=${dateTo}`;
+        if (status) url += `&status=${encodeURIComponent(status)}`;
+        if (siteCode) url += `&siteCode=${siteCode}`;
+
+        try {
+            const data = await apiCall('GET', url);
+            if (!data) return;
+
+            allOrders = data.items || [];
+            currentPage = 1;
+            selectedOrders.clear();
+            document.getElementById('check-all').checked = false;
+            renderGrid();
+        } catch (err) {
+            showSnackbar(err.message, 'error');
+        }
+    }
+
+    /** 検索条件クリア */
+    function clearSearch() {
+        document.getElementById('date-from').value = getToday();
+        document.getElementById('date-to').value = getDateOffset(7);
+        document.getElementById('filter-status').value = '';
+        searchOrders();
+    }
+
+    /** グリッド描画 */
+    function renderGrid() {
+        const tbody = document.getElementById('order-body');
+
+        // ソート
+        const sorted = [...allOrders].sort((a, b) => {
+            let va = a[sortField] || '';
+            let vb = b[sortField] || '';
+            if (typeof va === 'number') return sortAsc ? va - vb : vb - va;
+            return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+        });
+
+        // ページング
+        const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+        const start = (currentPage - 1) * pageSize;
+        const paged = sorted.slice(start, start + pageSize);
+
+        // ページング情報
+        document.getElementById('paging-info').textContent = `${sorted.length}件中 ${start + 1}〜${Math.min(start + pageSize, sorted.length)}件`;
+        document.getElementById('paging-area').style.display = sorted.length > pageSize ? 'flex' : 'none';
+        document.getElementById('page-display').textContent = `${currentPage} / ${totalPages}`;
+        document.getElementById('btn-prev').disabled = currentPage <= 1;
+        document.getElementById('btn-next').disabled = currentPage >= totalPages;
+
+        // 行生成
+        tbody.innerHTML = paged.map(order => {
+            const rowClass = getRowClass(order.status);
+            const checked = selectedOrders.has(order.seiriNo) ? 'checked' : '';
+            const pickLabel = getPickTypeLabel(order.pickType);
+            return `<tr class="${rowClass}" ondblclick="startInspectionDirect('${order.seiriNo}')">
+                <td><input type="checkbox" class="checkbox" value="${order.seiriNo}" ${checked} onchange="onRowCheck(this)"></td>
+                <td class="text-mono font-bold">${escapeHtml(order.seiriNo)}</td>
+                <td class="text-center">${order.koguchiSu}</td>
+                <td>${escapeHtml(order.customerName)}</td>
+                <td>${escapeHtml(order.warehouseCode)}</td>
+                <td>${escapeHtml(order.shipDate || '')}</td>
+                <td>${escapeHtml(order.carrierName || '')}</td>
+                <td>${escapeHtml(pickLabel)}</td>
+                <td><span class="status-badge ${order.status}">${escapeHtml(order.status)}</span></td>
+            </tr>`;
+        }).join('');
+
+        updateButtons();
+    }
+
+    /** 行の背景色クラスを取得 */
+    function getRowClass(status) {
+        switch (status) {
+            case '検品中': return 'row-scanning';
+            case '検品完了': return 'row-completed';
+            case '出荷済': return 'row-shipped';
+            default: return '';
+        }
+    }
+
+    /** 検品種別の表示名を取得 */
+    function getPickTypeLabel(pickType) {
+        switch (pickType) {
+            case 'SINGLE': return 'シングル';
+            case 'TOTAL_BARA': return 'トータルバラ';
+            case 'TOTAL_CASE': return 'トータルケース';
+            default: return pickType;
+        }
+    }
+
+    /** 行チェック */
+    function onRowCheck(cb) {
+        if (cb.checked) {
+            selectedOrders.add(cb.value);
+        } else {
+            selectedOrders.delete(cb.value);
+        }
+        updateButtons();
+    }
+
+    /** 全選択/解除 */
+    function toggleAll(cb) {
+        const checkboxes = document.querySelectorAll('#order-body .checkbox');
+        checkboxes.forEach(c => {
+            c.checked = cb.checked;
+            if (cb.checked) selectedOrders.add(c.value);
+            else selectedOrders.delete(c.value);
+        });
+        updateButtons();
+    }
+
+    /** ボタン状態更新 */
+    function updateButtons() {
+        const btn = document.getElementById('btn-start-pc');
+        if (selectedOrders.size === 0) {
+            btn.disabled = true;
+            return;
+        }
+        // 選択されたものが未検品 or 検品中のみか確認
+        const canStart = [...selectedOrders].every(seiriNo => {
+            const order = allOrders.find(o => o.seiriNo === seiriNo);
+            return order && (order.status === '未検品' || order.status === '検品中');
+        });
+        btn.disabled = !canStart;
+    }
+
+    /** ソート */
+    function sortBy(field) {
+        if (sortField === field) {
+            sortAsc = !sortAsc;
+        } else {
+            sortField = field;
+            sortAsc = true;
+        }
+        renderGrid();
+    }
+
+    /** ページ変更 */
+    function changePage(delta) {
+        currentPage += delta;
+        renderGrid();
+    }
+
+    /** 検品開始(PC) — 選択した最初の整理番号で荷札読込画面へ */
+    function startInspectionPC() {
+        if (selectedOrders.size === 0) return;
+        const seiriNo = [...selectedOrders][0];
+        location.href = `/Inspection/TagScan?seiriNo=${seiriNo}`;
+    }
+
+    /** ダブルクリックで直接検品開始 */
+    function startInspectionDirect(seiriNo) {
+        const order = allOrders.find(o => o.seiriNo === seiriNo);
+        if (order && (order.status === '未検品' || order.status === '検品中')) {
+            location.href = `/Inspection/TagScan?seiriNo=${seiriNo}`;
+        }
+    }
+</script>
+}
