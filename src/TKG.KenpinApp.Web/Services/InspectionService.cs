@@ -444,10 +444,46 @@ public class InspectionService : IInspectionService
         session.Status = "COMPLETED";
         session.CompletedAt = DateTime.Now;
         session.UpdatedAt = DateTime.Now;
-        session.D365Synced = true; // モックでは即座に同期済みとする（リトライキューはCommit 3で実装）
 
         // ロック解放
         await ReleaseLockAsync(session.SeiriNo, session.ShukkaDate);
+
+        // D365連携を試行
+        var d365SyncStatus = "Synced";
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            sessionId,
+            seiriNo = session.SeiriNo,
+            totalScanned = session.ScannedQty,
+            totalQty = session.TotalQty,
+            completedAt = session.CompletedAt
+        });
+
+        try
+        {
+            await _d365.SyncInspectionResultAsync(sessionId, payload);
+            session.D365Synced = true;
+            _logger.LogInformation("D365連携成功: sessionId={SessionId}", sessionId);
+        }
+        catch (Exception ex)
+        {
+            // D365連携失敗 → リトライキューに登録
+            session.D365Synced = false;
+            d365SyncStatus = "Pending";
+
+            _db.D365SyncQueues.Add(new D365SyncQueue
+            {
+                SessionId = sessionId,
+                SyncType = "KENPIN_RESULT",
+                Payload = payload,
+                Status = "PENDING",
+                NextRetryAt = DateTime.Now.AddSeconds(30)
+            });
+
+            _logger.LogWarning(
+                "D365連携失敗。リトライキューに登録: sessionId={SessionId}, error={Error}",
+                sessionId, ex.Message);
+        }
 
         // ログ記録
         _db.AppLogs.Add(new AppLog
@@ -462,19 +498,20 @@ public class InspectionService : IInspectionService
                 seiriNo = session.SeiriNo,
                 totalScanned = session.ScannedQty,
                 totalQty = session.TotalQty,
-                d365Synced = true
+                d365Synced = session.D365Synced,
+                d365SyncStatus
             })
         });
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("検品完了: sessionId={SessionId}, scanned={Scanned}",
-            sessionId, session.ScannedQty);
+        _logger.LogInformation("検品完了: sessionId={SessionId}, scanned={Scanned}, d365={D365Status}",
+            sessionId, session.ScannedQty, d365SyncStatus);
 
         return new InspectionCompleteResponse
         {
             Success = true,
-            D365SyncStatus = "Synced"
+            D365SyncStatus = d365SyncStatus
         };
     }
 

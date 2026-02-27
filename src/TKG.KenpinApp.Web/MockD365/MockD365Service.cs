@@ -9,6 +9,8 @@ namespace TKG.KenpinApp.Web.MockD365;
 public class MockD365Service : ID365Service
 {
     private readonly ILogger<MockD365Service> _logger;
+    private readonly IConfiguration _config;
+    private readonly Random _random = new();
 
     /// <summary>
     /// モック社員マスタ
@@ -146,9 +148,10 @@ public class MockD365Service : ID365Service
         { "HORIKOSHI", "堀越" }
     };
 
-    public MockD365Service(ILogger<MockD365Service> logger)
+    public MockD365Service(ILogger<MockD365Service> logger, IConfiguration config)
     {
         _logger = logger;
+        _config = config;
     }
 
     /// <inheritdoc/>
@@ -257,5 +260,24 @@ public class MockD365Service : ID365Service
     public string GetSiteName(string siteCode)
     {
         return _siteNames.TryGetValue(siteCode, out var name) ? name : siteCode;
+    }
+
+    /// <inheritdoc/>
+    public Task SyncInspectionResultAsync(long sessionId, string payload)
+    {
+        _logger.LogInformation("モック: D365検品結果連携 sessionId={SessionId}", sessionId);
+
+        // 失敗率を設定から取得（デフォルト: 20%失敗）
+        var failureRate = _config.GetValue<int>("MockD365:FailureRatePercent", 20);
+
+        // ランダムに失敗をシミュレート
+        if (_random.Next(100) < failureRate)
+        {
+            _logger.LogWarning("モック: D365連携失敗シミュレーション sessionId={SessionId}", sessionId);
+            throw new Exception($"D365 API呼出エラー（モック失敗シミュレーション: {failureRate}%）");
+        }
+
+        _logger.LogInformation("モック: D365連携成功 sessionId={SessionId}", sessionId);
+        return Task.CompletedTask;
     }
 }

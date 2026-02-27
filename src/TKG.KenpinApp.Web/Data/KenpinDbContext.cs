@@ -18,6 +18,7 @@ public class KenpinDbContext : DbContext
     public DbSet<DenpyoKenpin> DenpyoKenpins { get; set; } = null!;
     public DbSet<UserSession> UserSessions { get; set; } = null!;
     public DbSet<AppLog> AppLogs { get; set; } = null!;
+    public DbSet<D365SyncQueue> D365SyncQueues { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,6 +66,16 @@ public class KenpinDbContext : DbContext
         {
             entity.HasIndex(e => e.LogDatetime);
             entity.HasIndex(e => e.UserCode);
+        });
+
+        // T_D365_SYNC_QUEUE
+        modelBuilder.Entity<D365SyncQueue>(entity =>
+        {
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.NextRetryAt);
+            entity.HasOne(e => e.Session)
+                  .WithMany()
+                  .HasForeignKey(e => e.SessionId);
         });
     }
 }

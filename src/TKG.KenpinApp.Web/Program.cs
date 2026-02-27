@@ -17,6 +17,7 @@ builder.Services.AddScoped<IInspectionService, InspectionService>();
 
 // バックグラウンドジョブ
 builder.Services.AddHostedService<LockTimeoutService>();
+builder.Services.AddHostedService<D365SyncRetryService>();
 
 // コントローラー登録
 builder.Services.AddControllers();

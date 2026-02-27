@@ -43,6 +43,12 @@ public interface ID365Service
     /// 拠点コードから拠点名を取得
     /// </summary>
     string GetSiteName(string siteCode);
+
+    /// <summary>
+    /// 検品結果をD365に連携する
+    /// 失敗時は例外をスロー
+    /// </summary>
+    Task SyncInspectionResultAsync(long sessionId, string payload);
 }
 
 /// <summary>
