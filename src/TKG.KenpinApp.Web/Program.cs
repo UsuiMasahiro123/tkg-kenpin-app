@@ -6,9 +6,13 @@ using TKG.KenpinApp.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// データベース設定
+// データベース設定（Azure App Service対応: HOMEディレクトリにDB配置）
+var dbPath = Path.Combine(
+    Environment.GetEnvironmentVariable("HOME") ?? Directory.GetCurrentDirectory(),
+    "kenpin.db"
+);
 builder.Services.AddDbContext<KenpinDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite($"Data Source={dbPath}"));
 
 // DIサービス登録
 builder.Services.AddSingleton<ID365Service, MockD365Service>();
@@ -33,6 +37,16 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// データベース自動マイグレーション（リレーショナルDB使用時のみ）
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<KenpinDbContext>();
+    if (db.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
+    {
+        db.Database.Migrate();
+    }
+}
 
 // 開発環境設定
 if (app.Environment.IsDevelopment())
