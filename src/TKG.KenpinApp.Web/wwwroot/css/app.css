@@ -409,7 +409,7 @@ a {
 .data-grid thead {
   background: var(--md-surface-container);
   position: sticky;
-  top: 56px;
+  top: 0;
   z-index: 10;
 }
 .data-grid th {

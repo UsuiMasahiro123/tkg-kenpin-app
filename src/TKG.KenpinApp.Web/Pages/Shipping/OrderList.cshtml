@@ -58,7 +58,7 @@
 </div>
 
 <!-- データグリッド -->
-<div style="overflow-x:auto;">
+<div style="overflow-x:auto; overflow-y:auto; max-height:calc(100vh - 260px);">
     <table class="data-grid" id="order-grid">
         <thead>
             <tr>
@@ -126,7 +126,7 @@
         if (dateFrom) url += `&dateFrom=${dateFrom}`;
         if (dateTo) url += `&dateTo=${dateTo}`;
         if (status) url += `&status=${encodeURIComponent(status)}`;
-        if (siteCode) url += `&siteCode=${siteCode}`;
+        // 拠点フィルタは使用しない（全拠点の出荷指示を表示）
 
         try {
             const data = await apiCall('GET', url);
