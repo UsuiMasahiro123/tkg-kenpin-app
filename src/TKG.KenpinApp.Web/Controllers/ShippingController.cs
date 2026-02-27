@@ -7,6 +7,7 @@ namespace TKG.KenpinApp.Web.Controllers;
 
 /// <summary>
 /// 出荷管理APIコントローラー
+/// 例外はExceptionHandlingMiddlewareで一元処理
 /// </summary>
 [ApiController]
 [Route("api/shipping")]
@@ -103,18 +104,10 @@ public class ShippingController : ControllerBase
     public async Task<ActionResult<PackingSlipPostResponse>> PostPackingSlip(
         [FromBody] PackingSlipPostRequest request)
     {
-        try
-        {
-            var result = await _d365.PostPackingSlipAsync(request.SeiriNos, request.OrderType);
-            _logger.LogInformation(
-                "梱包明細転記: jobId={JobId}, seiriNos={SeiriNos}",
-                result.JobId, string.Join(",", request.SeiriNos));
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "梱包明細転記エラー");
-            return StatusCode(500, new { error = "梱包明細転記に失敗しました" });
-        }
+        var result = await _d365.PostPackingSlipAsync(request.SeiriNos, request.OrderType);
+        _logger.LogInformation(
+            "梱包明細転記: jobId={JobId}, seiriNos={SeiriNos}",
+            result.JobId, string.Join(",", request.SeiriNos));
+        return Ok(result);
     }
 }

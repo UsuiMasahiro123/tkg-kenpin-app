@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using TKG.KenpinApp.Web.Constants;
 using TKG.KenpinApp.Web.Data;
+using TKG.KenpinApp.Web.Exceptions;
 using TKG.KenpinApp.Web.Models;
 using TKG.KenpinApp.Web.Models.Dto;
 using TKG.KenpinApp.Web.MockD365;
@@ -31,11 +33,16 @@ public class AuthService : IAuthService
     /// <inheritdoc/>
     public async Task<LoginResponse> LoginAsync(LoginRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.EmpNo))
+        {
+            throw new BusinessException(ErrorCodes.AUTH_EMPTY, "社員番号を入力してください");
+        }
+
         // D365モック社員マスタ照会
         var employee = await _d365.GetEmployeeAsync(request.EmpNo);
         if (employee == null)
         {
-            throw new InvalidOperationException("社員番号が見つかりません");
+            throw new BusinessException(ErrorCodes.AUTH_NOT_FOUND, "社員番号が見つかりません");
         }
 
         // セッショントークン生成
@@ -55,7 +62,7 @@ public class AuthService : IAuthService
         _db.UserSessions.Add(userSession);
 
         // T_APP_LOG INSERT
-        var appLog = new AppLog
+        _db.AppLogs.Add(new AppLog
         {
             LogDatetime = now,
             UserCode = request.EmpNo,
@@ -66,8 +73,7 @@ public class AuthService : IAuthService
                 siteCode = request.SiteCode,
                 userName = employee.Name
             })
-        };
-        _db.AppLogs.Add(appLog);
+        });
 
         await _db.SaveChangesAsync();
 
@@ -95,14 +101,17 @@ public class AuthService : IAuthService
         _db.UserSessions.Remove(session);
 
         // T_APP_LOG INSERT
-        var appLog = new AppLog
+        _db.AppLogs.Add(new AppLog
         {
             LogDatetime = DateTime.Now,
             UserCode = session.UserCode,
             ActionType = "LOGOUT",
-            ScreenId = "LOGIN"
-        };
-        _db.AppLogs.Add(appLog);
+            ScreenId = "LOGIN",
+            Detail = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                userCode = session.UserCode
+            })
+        });
 
         await _db.SaveChangesAsync();
 
@@ -122,7 +131,7 @@ public class AuthService : IAuthService
         // 有効期限チェック
         if (session.ExpiresAt.HasValue && session.ExpiresAt.Value < DateTime.Now)
         {
-            _logger.LogWarning("セッション期限切れ: token={Token}", sessionToken);
+            _logger.LogWarning("セッション期限切れ: userCode={UserCode}", session.UserCode);
             _db.UserSessions.Remove(session);
             await _db.SaveChangesAsync();
             return null;

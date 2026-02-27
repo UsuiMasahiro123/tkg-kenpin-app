@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TKG.KenpinApp.Web.Data;
+using TKG.KenpinApp.Web.Middleware;
 using TKG.KenpinApp.Web.MockD365;
 using TKG.KenpinApp.Web.Services;
 
@@ -48,6 +49,12 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+// グローバル例外ハンドリングミドルウェア
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// セッション検証ミドルウェア
+app.UseMiddleware<SessionValidationMiddleware>();
 
 app.UseAuthorization();
 
