@@ -15,4 +15,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="MockData\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

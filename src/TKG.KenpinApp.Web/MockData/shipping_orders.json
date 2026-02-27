@@ -1,0 +1,80 @@
+[
+  {
+    "seiriNo": "1001",
+    "shukkaDate": "2026-02-27",
+    "customerCode": "C001",
+    "customerName": "○○商事",
+    "koguchiSu": 3,
+    "warehouseCode": "TOA-K",
+    "deliveryDate": "2026-03-01",
+    "shipDate": "2026-02-28",
+    "carrierName": "ヤマト運輸",
+    "pickType": "SINGLE",
+    "status": "未検品"
+  },
+  {
+    "seiriNo": "1002",
+    "shukkaDate": "2026-02-27",
+    "customerCode": "C002",
+    "customerName": "△△工業",
+    "koguchiSu": 1,
+    "warehouseCode": "TOA-K",
+    "deliveryDate": "2026-03-01",
+    "shipDate": "2026-02-28",
+    "carrierName": "佐川急便",
+    "pickType": "TOTAL_BARA",
+    "status": "未検品"
+  },
+  {
+    "seiriNo": "1003",
+    "shukkaDate": "2026-02-27",
+    "customerCode": "C003",
+    "customerName": "◇◇物流",
+    "koguchiSu": 5,
+    "warehouseCode": "TSUKUBA",
+    "deliveryDate": "2026-03-02",
+    "shipDate": "2026-03-01",
+    "carrierName": "西濃運輸",
+    "pickType": "TOTAL_CASE",
+    "status": "未検品"
+  },
+  {
+    "seiriNo": "1004",
+    "shukkaDate": "2026-02-27",
+    "customerCode": "C004",
+    "customerName": "□□電機",
+    "koguchiSu": 2,
+    "warehouseCode": "TOA-K",
+    "deliveryDate": "2026-03-01",
+    "shipDate": "2026-02-28",
+    "carrierName": "ヤマト運輸",
+    "pickType": "SINGLE",
+    "status": "未検品"
+  },
+  {
+    "seiriNo": "1005",
+    "shukkaDate": "2026-02-27",
+    "customerCode": "C005",
+    "customerName": "××産業",
+    "koguchiSu": 1,
+    "warehouseCode": "TSUKUBA",
+    "deliveryDate": "2026-03-02",
+    "shipDate": "2026-03-01",
+    "carrierName": "佐川急便",
+    "pickType": "TOTAL_BARA",
+    "status": "未検品"
+  },
+  {
+    "seiriNo": "1006",
+    "shukkaDate": "2026-02-26",
+    "customerCode": "C006",
+    "customerName": "☆☆商会",
+    "koguchiSu": 4,
+    "warehouseCode": "HORIKOSHI",
+    "deliveryDate": "2026-03-01",
+    "shipDate": "2026-02-27",
+    "carrierName": "西濃運輸",
+    "pickType": "TOTAL_CASE",
+    "status": "未検品"
+  }
+]

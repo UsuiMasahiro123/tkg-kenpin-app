@@ -1,0 +1,7 @@
+[
+  { "empNo": "1055", "name": "下原 太郎", "department": "物流部" },
+  { "empNo": "1102", "name": "山田 花子", "department": "物流部" },
+  { "empNo": "1203", "name": "佐藤 一郎", "department": "倉庫管理課" },
+  { "empNo": "1304", "name": "田中 美咲", "department": "倉庫管理課" },
+  { "empNo": "1405", "name": "鈴木 健太", "department": "出荷管理課" }
+]

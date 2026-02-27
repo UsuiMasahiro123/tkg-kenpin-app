@@ -1,142 +1,24 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using TKG.KenpinApp.Web.Models.Dto;
 
 namespace TKG.KenpinApp.Web.MockD365;
 
 /// <summary>
 /// D365モックAPIサービス（開発用）
-/// 本番環境ではD365 APIに接続する実装に差し替える
+/// JSONファイルからデータを読み込む。ReloadData()で再読込可能。
 /// </summary>
 public class MockD365Service : ID365Service
 {
     private readonly ILogger<MockD365Service> _logger;
     private readonly IConfiguration _config;
+    private readonly string _dataPath;
     private readonly Random _random = new();
+    private readonly object _lockObj = new();
 
-    /// <summary>
-    /// モック社員マスタ
-    /// </summary>
-    private static readonly List<D365Employee> _employees = new()
-    {
-        new() { EmpNo = "1055", Name = "下原 太郎", Department = "物流部" },
-        new() { EmpNo = "1102", Name = "山田 花子", Department = "物流部" },
-        new() { EmpNo = "1203", Name = "佐藤 一郎", Department = "倉庫管理課" },
-        new() { EmpNo = "1304", Name = "田中 美咲", Department = "倉庫管理課" },
-        new() { EmpNo = "1405", Name = "鈴木 健太", Department = "出荷管理課" }
-    };
-
-    /// <summary>
-    /// モック出荷指示データ
-    /// </summary>
-    private static readonly List<D365ShippingOrder> _orders = new()
-    {
-        // 整理番号1001 — シングルピッキング（PC）
-        new()
-        {
-            SeiriNo = "1001",
-            ShukkaDate = "2026-02-27",
-            CustomerCode = "C001",
-            CustomerName = "○○商事",
-            KoguchiSu = 3,
-            WarehouseCode = "TOA-K",
-            DeliveryDate = "2026-03-01",
-            ShipDate = "2026-02-28",
-            CarrierName = "ヤマト運輸",
-            PickType = "SINGLE",
-            Status = "未検品",
-            Items = new()
-            {
-                new() { LineNo = 1, ItemCode = "GQ41FJ", ItemName = "浄水器カートリッジA", LocationNo = "A-01", ShipQty = 10, BaraShukkaSu = 10, UnitShukkaSu = 0, UchibakoIrisu = 1, UnitIrisu = 1, JanCode = "4975373000100", KenpinCategory = "BARA" },
-                new() { LineNo = 2, ItemCode = "GQ52KL", ItemName = "浄水器本体B", LocationNo = "A-02", ShipQty = 5, BaraShukkaSu = 5, UnitShukkaSu = 0, UchibakoIrisu = 1, UnitIrisu = 1, JanCode = "4975373000201", KenpinCategory = "BARA" },
-                new() { LineNo = 3, ItemCode = "GQ63MN", ItemName = "シャワーヘッドC", LocationNo = "B-03", ShipQty = 3, BaraShukkaSu = 3, UnitShukkaSu = 0, UchibakoIrisu = 1, UnitIrisu = 1, JanCode = "4975373000302", KenpinCategory = "BARA" }
-            }
-        },
-        // 整理番号1002 — トータルバラ（PC）
-        new()
-        {
-            SeiriNo = "1002",
-            ShukkaDate = "2026-02-27",
-            CustomerCode = "C002",
-            CustomerName = "△△工業",
-            KoguchiSu = 1,
-            WarehouseCode = "TOA-K",
-            DeliveryDate = "2026-03-01",
-            ShipDate = "2026-02-28",
-            CarrierName = "佐川急便",
-            PickType = "TOTAL_BARA",
-            Status = "未検品",
-            Items = new()
-            {
-                new() { LineNo = 1, ItemCode = "GQ41FJ", ItemName = "浄水器カートリッジA", LocationNo = "A-01", ShipQty = 20, BaraShukkaSu = 20, UnitShukkaSu = 0, UchibakoIrisu = 1, UnitIrisu = 1, JanCode = "4975373000100", KenpinCategory = "BARA" },
-                new() { LineNo = 2, ItemCode = "GQ74PQ", ItemName = "蛇口パーツD", LocationNo = "C-04", ShipQty = 8, BaraShukkaSu = 8, UnitShukkaSu = 0, UchibakoIrisu = 1, UnitIrisu = 1, JanCode = "4975373000403", KenpinCategory = "BARA" }
-            }
-        },
-        // 整理番号1003 — トータルケース（モバイル）
-        new()
-        {
-            SeiriNo = "1003",
-            ShukkaDate = "2026-02-27",
-            CustomerCode = "C003",
-            CustomerName = "◇◇物流",
-            KoguchiSu = 5,
-            WarehouseCode = "TSUKUBA",
-            DeliveryDate = "2026-03-02",
-            ShipDate = "2026-03-01",
-            CarrierName = "西濃運輸",
-            PickType = "TOTAL_CASE",
-            Status = "未検品",
-            Items = new()
-            {
-                new() { LineNo = 1, ItemCode = "GQ41FJ", ItemName = "浄水器カートリッジA", LocationNo = "D-02", ShipQty = 30, BaraShukkaSu = 0, UnitShukkaSu = 5, UchibakoIrisu = 6, UnitIrisu = 6, JanCode = "4975373000100", KenpinCategory = "CASE" },
-                new() { LineNo = 2, ItemCode = "GQ85RS", ItemName = "フィルターセットE", LocationNo = "D-03", ShipQty = 24, BaraShukkaSu = 0, UnitShukkaSu = 4, UchibakoIrisu = 6, UnitIrisu = 6, JanCode = "4975373000504", KenpinCategory = "CASE" }
-            }
-        },
-        // 整理番号1004〜1006 — ステータス確認用
-        new()
-        {
-            SeiriNo = "1004",
-            ShukkaDate = "2026-02-27",
-            CustomerCode = "C004",
-            CustomerName = "□□電機",
-            KoguchiSu = 2,
-            WarehouseCode = "TOA-K",
-            DeliveryDate = "2026-03-01",
-            ShipDate = "2026-02-28",
-            CarrierName = "ヤマト運輸",
-            PickType = "SINGLE",
-            Status = "検品中",
-            Items = new()
-        },
-        new()
-        {
-            SeiriNo = "1005",
-            ShukkaDate = "2026-02-27",
-            CustomerCode = "C005",
-            CustomerName = "××産業",
-            KoguchiSu = 1,
-            WarehouseCode = "TSUKUBA",
-            DeliveryDate = "2026-03-01",
-            ShipDate = "2026-02-28",
-            CarrierName = "佐川急便",
-            PickType = "TOTAL_BARA",
-            Status = "検品完了",
-            Items = new()
-        },
-        new()
-        {
-            SeiriNo = "1006",
-            ShukkaDate = "2026-02-26",
-            CustomerCode = "C006",
-            CustomerName = "☆☆商会",
-            KoguchiSu = 4,
-            WarehouseCode = "HORIKOSHI",
-            DeliveryDate = "2026-02-28",
-            ShipDate = "2026-02-27",
-            CarrierName = "西濃運輸",
-            PickType = "TOTAL_CASE",
-            Status = "出荷済",
-            Items = new()
-        }
-    };
+    private List<D365Employee> _employees = new();
+    private List<D365ShippingOrder> _orders = new();
+    private Dictionary<string, List<MockShippingItem>> _itemsMap = new();
 
     /// <summary>
     /// 拠点名マッピング
@@ -148,11 +30,85 @@ public class MockD365Service : ID365Service
         { "HORIKOSHI", "堀越" }
     };
 
-    public MockD365Service(ILogger<MockD365Service> logger, IConfiguration config)
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        ReadCommentHandling = JsonCommentHandling.Skip
+    };
+
+    public MockD365Service(ILogger<MockD365Service> logger, IConfiguration config, IWebHostEnvironment env)
     {
         _logger = logger;
         _config = config;
+        _dataPath = Path.Combine(env.ContentRootPath, "MockData");
+        LoadData();
     }
+
+    /// <summary>
+    /// 外部JSONファイルからデータを読み込む
+    /// </summary>
+    private void LoadData()
+    {
+        lock (_lockObj)
+        {
+            try
+            {
+                // 社員マスタ
+                var empJson = File.ReadAllText(Path.Combine(_dataPath, "employees.json"));
+                var empList = JsonSerializer.Deserialize<List<MockEmployee>>(empJson, _jsonOptions) ?? new();
+                _employees = empList.Select(e => new D365Employee
+                {
+                    EmpNo = e.EmpNo,
+                    Name = e.Name,
+                    Department = e.Department
+                }).ToList();
+
+                // 出荷指示明細マップ
+                var itemsJson = File.ReadAllText(Path.Combine(_dataPath, "shipping_items.json"));
+                _itemsMap = JsonSerializer.Deserialize<Dictionary<string, List<MockShippingItem>>>(itemsJson, _jsonOptions) ?? new();
+
+                // 出荷指示ヘッダー
+                var ordersJson = File.ReadAllText(Path.Combine(_dataPath, "shipping_orders.json"));
+                var orderList = JsonSerializer.Deserialize<List<MockShippingOrder>>(ordersJson, _jsonOptions) ?? new();
+                _orders = orderList.Select(o =>
+                {
+                    var items = _itemsMap.TryGetValue(o.SeiriNo, out var itemList)
+                        ? itemList.Select(MapToInspectionItem).ToList()
+                        : new List<InspectionItem>();
+
+                    return new D365ShippingOrder
+                    {
+                        SeiriNo = o.SeiriNo,
+                        ShukkaDate = o.ShukkaDate,
+                        CustomerCode = o.CustomerCode,
+                        CustomerName = o.CustomerName,
+                        KoguchiSu = o.KoguchiSu,
+                        WarehouseCode = o.WarehouseCode,
+                        DeliveryDate = o.DeliveryDate,
+                        ShipDate = o.ShipDate,
+                        CarrierName = o.CarrierName,
+                        PickType = o.PickType,
+                        Status = o.Status,
+                        Items = items
+                    };
+                }).ToList();
+
+                _logger.LogInformation(
+                    "モックデータ読込完了: 社員={EmpCount}件, 出荷指示={OrderCount}件",
+                    _employees.Count, _orders.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "モックデータ読込エラー: path={DataPath}", _dataPath);
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// データリロード（開発用: サーバー再起動不要）
+    /// </summary>
+    public void ReloadData() => LoadData();
 
     /// <inheritdoc/>
     public Task<D365Employee?> GetEmployeeAsync(string empNo)
@@ -172,7 +128,6 @@ public class MockD365Service : ID365Service
 
         var query = _orders.AsEnumerable();
 
-        // 日付フィルタ
         if (!string.IsNullOrEmpty(dateFrom))
         {
             query = query.Where(o => string.Compare(o.ShukkaDate, dateFrom, StringComparison.Ordinal) >= 0);
@@ -181,14 +136,10 @@ public class MockD365Service : ID365Service
         {
             query = query.Where(o => string.Compare(o.ShukkaDate, dateTo, StringComparison.Ordinal) <= 0);
         }
-
-        // ステータスフィルタ
         if (!string.IsNullOrEmpty(status))
         {
             query = query.Where(o => o.Status == status);
         }
-
-        // 拠点フィルタ
         if (!string.IsNullOrEmpty(siteCode))
         {
             query = query.Where(o => o.WarehouseCode == siteCode);
@@ -218,7 +169,6 @@ public class MockD365Service : ID365Service
     {
         _logger.LogInformation("モック: バーコード照合 barcode={Barcode}", barcode);
 
-        // 全出荷指示の明細からバーコード（JANコード）で品目を検索
         var item = _orders
             .SelectMany(o => o.Items)
             .FirstOrDefault(i => i.JanCode == barcode);
@@ -246,7 +196,6 @@ public class MockD365Service : ID365Service
             "モック: 梱包明細転記 seiriNos={SeiriNos}, orderType={OrderType}",
             string.Join(",", seiriNos), orderType);
 
-        // モックでは常に成功を返す
         var response = new PackingSlipPostResponse
         {
             JobId = $"JOB-{DateTime.Now:yyyyMMddHHmmss}",
@@ -267,10 +216,8 @@ public class MockD365Service : ID365Service
     {
         _logger.LogInformation("モック: D365検品結果連携 sessionId={SessionId}", sessionId);
 
-        // 失敗率を設定から取得（デフォルト: 20%失敗）
         var failureRate = _config.GetValue<int>("MockD365:FailureRatePercent", 20);
 
-        // ランダムに失敗をシミュレート
         if (_random.Next(100) < failureRate)
         {
             _logger.LogWarning("モック: D365連携失敗シミュレーション sessionId={SessionId}", sessionId);
@@ -280,4 +227,62 @@ public class MockD365Service : ID365Service
         _logger.LogInformation("モック: D365連携成功 sessionId={SessionId}", sessionId);
         return Task.CompletedTask;
     }
+
+    private static InspectionItem MapToInspectionItem(MockShippingItem m) => new()
+    {
+        LineNo = m.LineNo,
+        ItemCode = m.ItemCode,
+        ItemName = m.ItemName,
+        LocationNo = m.LocationNo,
+        ShipQty = m.ShipQty,
+        BaraShukkaSu = m.BaraShukkaSu,
+        UnitShukkaSu = m.UnitShukkaSu,
+        UchibakoIrisu = m.UchibakoIrisu,
+        UnitIrisu = m.UnitIrisu,
+        JanCode = m.JanCode,
+        KenpinCategory = m.KenpinCategory
+    };
 }
+
+#region JSON逆シリアライズ用内部モデル
+
+internal class MockEmployee
+{
+    public string EmpNo { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Department { get; set; } = string.Empty;
+}
+
+internal class MockShippingOrder
+{
+    public string SeiriNo { get; set; } = string.Empty;
+    public string ShukkaDate { get; set; } = string.Empty;
+    public string CustomerCode { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public int KoguchiSu { get; set; }
+    public string WarehouseCode { get; set; } = string.Empty;
+    public string DeliveryDate { get; set; } = string.Empty;
+    public string ShipDate { get; set; } = string.Empty;
+    public string CarrierName { get; set; } = string.Empty;
+    public string PickType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+internal class MockShippingItem
+{
+    public int LineNo { get; set; }
+    public string ItemCode { get; set; } = string.Empty;
+    public string ItemName { get; set; } = string.Empty;
+    public string LocationNo { get; set; } = string.Empty;
+    public int ShipQty { get; set; }
+    public int BaraShukkaSu { get; set; }
+    public int UnitShukkaSu { get; set; }
+    [JsonPropertyName("uchibako_irisu")]
+    public int UchibakoIrisu { get; set; }
+    [JsonPropertyName("unit_irisu")]
+    public int UnitIrisu { get; set; }
+    public string JanCode { get; set; } = string.Empty;
+    public string KenpinCategory { get; set; } = string.Empty;
+}
+
+#endregion

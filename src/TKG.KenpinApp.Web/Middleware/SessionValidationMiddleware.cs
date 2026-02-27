@@ -18,7 +18,8 @@ public class SessionValidationMiddleware
     /// </summary>
     private static readonly string[] SkipPaths = new[]
     {
-        "/api/auth/login"
+        "/api/auth/login",
+        "/api/dev"
     };
 
     public SessionValidationMiddleware(RequestDelegate next, ILogger<SessionValidationMiddleware> logger)

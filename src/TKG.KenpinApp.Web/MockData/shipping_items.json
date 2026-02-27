@@ -1,0 +1,26 @@
+{
+  "1001": [
+    { "lineNo": 1, "itemCode": "GQ41FJ", "itemName": "浄水器カートリッジA", "locationNo": "A-01", "shipQty": 10, "baraShukkaSu": 10, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000100", "kenpinCategory": "BARA" },
+    { "lineNo": 2, "itemCode": "GQ52KL", "itemName": "浄水器本体B", "locationNo": "A-02", "shipQty": 5, "baraShukkaSu": 5, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000201", "kenpinCategory": "BARA" },
+    { "lineNo": 3, "itemCode": "GQ63MN", "itemName": "シャワーヘッドC", "locationNo": "B-03", "shipQty": 3, "baraShukkaSu": 3, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000302", "kenpinCategory": "BARA" }
+  ],
+  "1002": [
+    { "lineNo": 1, "itemCode": "GQ41FJ", "itemName": "浄水器カートリッジA", "locationNo": "A-01", "shipQty": 20, "baraShukkaSu": 20, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000100", "kenpinCategory": "BARA" },
+    { "lineNo": 2, "itemCode": "GQ74PQ", "itemName": "蛇口パーツD", "locationNo": "C-04", "shipQty": 8, "baraShukkaSu": 8, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000403", "kenpinCategory": "BARA" }
+  ],
+  "1003": [
+    { "lineNo": 1, "itemCode": "GQ41FJ", "itemName": "浄水器カートリッジA", "locationNo": "D-02", "shipQty": 30, "baraShukkaSu": 0, "unitShukkaSu": 5, "uchibako_irisu": 6, "unit_irisu": 6, "janCode": "4975373000100", "kenpinCategory": "CASE" },
+    { "lineNo": 2, "itemCode": "GQ85RS", "itemName": "フィルターセットE", "locationNo": "D-03", "shipQty": 24, "baraShukkaSu": 0, "unitShukkaSu": 4, "uchibako_irisu": 6, "unit_irisu": 6, "janCode": "4975373000504", "kenpinCategory": "CASE" }
+  ],
+  "1004": [
+    { "lineNo": 1, "itemCode": "GQ41FJ", "itemName": "浄水器カートリッジA", "locationNo": "A-01", "shipQty": 5, "baraShukkaSu": 5, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000100", "kenpinCategory": "BARA" },
+    { "lineNo": 2, "itemCode": "GQ52KL", "itemName": "浄水器本体B", "locationNo": "A-02", "shipQty": 2, "baraShukkaSu": 2, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000201", "kenpinCategory": "BARA" }
+  ],
+  "1005": [
+    { "lineNo": 1, "itemCode": "GQ74PQ", "itemName": "蛇口パーツD", "locationNo": "C-04", "shipQty": 12, "baraShukkaSu": 12, "unitShukkaSu": 0, "uchibako_irisu": 1, "unit_irisu": 1, "janCode": "4975373000403", "kenpinCategory": "BARA" }
+  ],
+  "1006": [
+    { "lineNo": 1, "itemCode": "GQ85RS", "itemName": "フィルターセットE", "locationNo": "D-03", "shipQty": 48, "baraShukkaSu": 0, "unitShukkaSu": 8, "uchibako_irisu": 6, "unit_irisu": 6, "janCode": "4975373000504", "kenpinCategory": "CASE" },
+    { "lineNo": 2, "itemCode": "GQ41FJ", "itemName": "浄水器カートリッジA", "locationNo": "D-02", "shipQty": 18, "baraShukkaSu": 0, "unitShukkaSu": 3, "uchibako_irisu": 6, "unit_irisu": 6, "janCode": "4975373000100", "kenpinCategory": "CASE" }
+  ]
+}
